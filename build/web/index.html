@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>8x8 Block Blast - Ranking & Scroll</title>
+    <title>8x8 Block Blast - Ranking & Simple Drag</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         :root {
@@ -18,7 +18,6 @@
             margin: 0;
             display: flex;
             justify-content: center;
-            /* ページ全体のスクロールを防止してゲームに集中 */
             overflow: hidden; 
             touch-action: none;
             height: 100vh;
@@ -91,18 +90,14 @@
             pointer-events: none;
             z-index: 1000;
             opacity: 0.9;
-            /* 指で隠れないように垂直オフセット */
-            margin-top: -70px; 
         }
 
-        /* Colors */
         .color-1 { background-color: #ff006e; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
         .color-2 { background-color: #8338ec; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
         .color-3 { background-color: #3a86ff; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
         .color-4 { background-color: #fb5607; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
         .color-5 { background-color: #ffbe0b; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
         
-        /* Scrollable Ranking */
         .ranking-box {
             margin-top: 1rem;
             flex: 1;
@@ -112,7 +107,7 @@
             padding: 1rem;
             display: flex;
             flex-direction: column;
-            min-height: 0; /* flex内のスクロールに必須 */
+            min-height: 0;
         }
 
         .ranking-list {
@@ -121,23 +116,17 @@
             padding-right: 4px;
         }
 
-        .ranking-list::-webkit-scrollbar {
-            width: 4px;
-        }
-        .ranking-list::-webkit-scrollbar-thumb {
-            background: #475569;
-            border-radius: 10px;
-        }
+        .ranking-list::-webkit-scrollbar { width: 4px; }
+        .ranking-list::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
     </style>
 </head>
 <body>
 
     <div class="game-container">
-        <!-- Score Header -->
         <div class="flex justify-between items-end mb-4">
             <div>
                 <h1 class="text-xl font-black text-blue-400 leading-none">BLOCK BLAST</h1>
-                <p class="text-[10px] text-slate-500 font-bold">WORLD RANKING SYSTEM</p>
+                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-tighter">Ranking Active</p>
             </div>
             <div class="flex gap-4">
                 <div class="text-right">
@@ -151,36 +140,27 @@
             </div>
         </div>
 
-        <!-- Grid Board -->
         <div id="grid-container">
             <div id="grid"></div>
         </div>
 
-        <!-- Pieces in Hand -->
         <div id="hand" class="hand-area"></div>
 
-        <!-- Scrollable Ranking -->
         <div class="ranking-box">
             <div class="flex justify-between items-center mb-2">
-                <h2 class="text-xs font-black text-slate-400 uppercase tracking-widest">Global Ranking</h2>
-                <span id="loading-status" class="text-[10px] text-blue-400 animate-pulse">Syncing...</span>
+                <h2 class="text-xs font-black text-slate-400 uppercase">Leaderboard</h2>
+                <span id="loading-status" class="text-[10px] text-blue-400">Loading...</span>
             </div>
-            <div id="leaderboard" class="ranking-list space-y-2">
-                <!-- Ranked items will appear here -->
-            </div>
+            <div id="leaderboard" class="ranking-list space-y-2"></div>
         </div>
     </div>
 
-    <!-- Game Over Screen -->
-    <div id="game-over" class="hidden fixed inset-0 bg-slate-950/95 flex flex-col items-center justify-center z-[2000] p-6">
+    <div id="game-over" class="hidden fixed inset-0 bg-slate-950/95 flex flex-col items-center justify-center z-[2000] p-6 text-center">
         <h2 class="text-3xl font-black text-white mb-2 italic">GAME OVER</h2>
         <p id="final-score" class="text-7xl font-black text-blue-500 mb-2">0</p>
         <div id="new-record" class="hidden text-yellow-400 font-bold animate-bounce mb-6 text-xl">NEW WORLD RECORD!</div>
-        
-        <button onclick="resetGame()" class="w-full max-w-xs py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-xl mb-4 transition-all shadow-lg active:scale-95">
-            PLAY AGAIN
-        </button>
-        <div class="text-slate-500 text-[10px] font-mono opacity-50">UID: <span id="user-id-display"></span></div>
+        <button onclick="resetGame()" class="w-full max-w-xs py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-xl shadow-lg active:scale-95 transition-all mb-4">PLAY AGAIN</button>
+        <div class="text-slate-500 text-[9px] font-mono opacity-50">UID: <span id="user-id-display"></span></div>
     </div>
 
     <script type="module">
@@ -201,7 +181,7 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'block-blast-pro';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'block-blast-v5';
 
         let user = null;
         let personalBest = 0;
@@ -237,7 +217,7 @@
         onAuthStateChanged(auth, (u) => {
             user = u;
             if (user) {
-                document.getElementById('user-id-display').innerText = user.uid.substring(0, 10);
+                document.getElementById('user-id-display').innerText = user.uid.substring(0, 8);
                 loadLeaderboard();
                 loadPersonalBest();
             }
@@ -282,17 +262,12 @@
                 const slot = document.createElement('div');
                 slot.className = 'piece-slot';
                 if (piece && !piece.used) {
-                    const visual = createPieceVisual(piece, getCellSize() * 0.65);
+                    const visual = createPieceVisual(piece, 20); // 固定サイズでの表示
                     visual.addEventListener('pointerdown', (e) => startDrag(e, idx, piece));
                     slot.appendChild(visual);
                 }
                 handEl.appendChild(slot);
             });
-        }
-
-        function getCellSize() {
-            const gridEl = document.getElementById('grid');
-            return (gridEl.clientWidth - (GRID_SIZE - 1) * 4) / GRID_SIZE;
         }
 
         function createPieceVisual(piece, size) {
@@ -317,17 +292,19 @@
 
         function startDrag(e, index, piece) {
             const rect = e.currentTarget.getBoundingClientRect();
+            // 掴んだ場所をそのまま記録
             dragInfo = { 
                 index, 
                 piece, 
                 offset: { x: e.clientX - rect.left, y: e.clientY - rect.top } 
             };
             
-            draggingElement = createPieceVisual(piece, getCellSize());
+            // ドラッグ用の要素を作成（表示サイズは固定）
+            draggingElement = createPieceVisual(piece, 20);
             draggingElement.classList.add('dragging');
             updateDragPosition(e.clientX, e.clientY);
             document.body.appendChild(draggingElement);
-            e.currentTarget.style.opacity = '0';
+            e.currentTarget.style.opacity = '0.3';
             
             window.addEventListener('pointermove', onMove);
             window.addEventListener('pointerup', onEnd);
@@ -346,8 +323,7 @@
 
         function highlightGrid(x, y) {
             document.querySelectorAll('.grid-cell').forEach(c => c.classList.remove('highlight'));
-            const checkY = y - 70; // 浮き上がりオフセット分
-            const coords = getGridAt(x, checkY);
+            const coords = getGridAt(x, y);
             if (coords && canPlace(dragInfo.piece, coords.r, coords.c)) {
                 dragInfo.piece.shape.forEach(([dr, dc]) => {
                     const cell = document.getElementById(`cell-${coords.r + dr}-${coords.c + dc}`);
@@ -366,8 +342,7 @@
         }
 
         function onEnd(e) {
-            const checkY = e.clientY - 70;
-            const coords = getGridAt(e.clientX, checkY);
+            const coords = getGridAt(e.clientX, e.clientY);
             if (coords && canPlace(dragInfo.piece, coords.r, coords.c)) {
                 placePiece(dragInfo.piece, coords.r, coords.c);
                 currentHand[dragInfo.index].used = true;
@@ -466,19 +441,14 @@
                 
                 document.getElementById('loading-status').innerText = "Live";
                 document.getElementById('leaderboard').innerHTML = scores.map((s, i) => `
-                    <div class="flex justify-between items-center p-2 rounded-lg ${s.userId === user?.uid ? 'bg-blue-600/20 border border-blue-500/30' : 'bg-slate-800/40'}">
+                    <div class="flex justify-between items-center p-2 rounded-lg ${s.userId === user?.uid ? 'bg-blue-600/30 border border-blue-500/50' : 'bg-slate-800/40'}">
                         <div class="flex items-center gap-3">
-                            <span class="text-[10px] font-black w-5 ${i < 3 ? 'text-yellow-400' : 'text-slate-500'}">${i + 1}</span>
-                            <div class="flex flex-col">
-                                <span class="text-[10px] font-mono text-slate-300 truncate w-24">${s.userId}</span>
-                                <span class="text-[8px] text-slate-500 uppercase">${new Date(s.timestamp).toLocaleDateString()}</span>
-                            </div>
+                            <span class="text-[10px] font-black w-4 ${i < 3 ? 'text-yellow-400' : 'text-slate-500'}">${i + 1}</span>
+                            <span class="text-[10px] font-mono text-slate-300 truncate w-32">${s.userId}</span>
                         </div>
-                        <span class="text-xs font-black text-white">${s.score.toLocaleString()}</span>
+                        <span class="text-[11px] font-black text-white">${s.score.toLocaleString()}</span>
                     </div>
                 `).join('');
-            }, (err) => {
-                document.getElementById('loading-status').innerText = "Offline";
             });
         }
 
