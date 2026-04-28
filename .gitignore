@@ -22,9 +22,8 @@ gen/
 .packages
 .flutter-plugins
 .flutter-plugins-dependencies
-build/
-app_server/
-web_server/
+/build/*
+!/build/web/
 **/ios/Pods/*
 **/ios/.symlinks/*
 **/ios/Flutter/App.framework
