@@ -24,7 +24,7 @@ const RESOURCES = {"assets/AssetManifest.bin": "31f7ffe524aaba82f5d333ba452542f8
 "assets/packages/cupertino_icons/assets/CupertinoIcons.ttf": "33b7d9392238c04c131b6ce224e13711",
 "assets/packages/three_js_controls/assets/joystick_background.png": "8c9aa78348b48e03f06bb97f74b819c9",
 "assets/packages/three_js_controls/assets/joystick_knob.png": "bb0811554c35e7d74df6d80fb5ff5cd5",
-"flutter_bootstrap.js": "7e436cc196ad84a024b0fab0f4b2bdf2",
+"flutter_bootstrap.js": "296f1ef50b53049784836244e142768d",
 "main.dart.js": "a15d0cc86c4ba978d8e0d15505f50b84",
 "flutter.js": "888483df48293866f9f41d3d9274a779",
 "version.json": "389a6e6e6f34312743ca5f36467c84b5",
