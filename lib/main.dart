@@ -122,9 +122,11 @@ class _GameScreenState extends State<GameScreen> {
         'maxHp': hp,
         'atk': _calculateStat(stats['attack'] as int, 'atk'),
         'def': _calculateStat(stats['defense'] as int, 'def'),
+        'spd': _calculateStat(stats['speed'] as int, 'spd'),
         'stat_modifiers': {
           'attack': 0,
           'defense': 0,
+          'speed': 0,
         },
         'moves': (pokemon['moves'] as List)
             .where((m) => selectedMoveNames.contains(m['name_ja']))
@@ -211,9 +213,11 @@ class _GameScreenState extends State<GameScreen> {
       'maxHp': hp,
       'atk': _calculateStat(s['attack'] as int, 'atk'),
       'def': _calculateStat(s['defense'] as int, 'def'),
+       'spd': _calculateStat(s['speed'] as int, 'spd'),
       'stat_modifiers': {
         'attack': 0,
         'defense': 0,
+         'speed': 0,
       },
       'moves': (wildData['moves'] as List).take(4).map((m) => {
         'name': m['name_ja'],
@@ -523,76 +527,105 @@ class _OnlineBattlePageState extends State<OnlineBattlePage> {
 
     final moveKey = isPlayer1 ? 'last_move_p1' : 'last_move_p2';
     final otherPlayerMoveKey = isPlayer1 ? 'last_move_p2' : 'last_move_p1';
-    final otherPlayerId = isPlayer1 ? roomData['player2Id'] : roomData['player1Id'];
 
-    // Store my move
-    await FirebaseFirestore.instance.collection('battle_rooms').doc(widget.roomId).update({ moveKey: move });
+    // Store my move and check if other player has moved in a transaction
+    await FirebaseFirestore.instance.runTransaction((transaction) async {
+      final roomDoc = await transaction.get(FirebaseFirestore.instance.collection('battle_rooms').doc(widget.roomId));
+      final freshRoomData = roomDoc.data()!;
+      final otherMove = freshRoomData[otherPlayerMoveKey];
 
-    // Check if other player has moved
-    final otherMove = roomData[otherPlayerMoveKey];
-    if (otherMove != null) {
-      await _processTurn(roomData, move, otherMove, isPlayer1);
-    } else {
-      // wait for other player
-      await FirebaseFirestore.instance.collection('battle_rooms').doc(widget.roomId).update({'logs': FieldValue.arrayUnion(['相手の選択を待っています...'])});
-    }
+      if (otherMove != null) {
+        // The other player has already moved, let's process the turn.
+        final p1Move = isPlayer1 ? move : otherMove;
+        final p2Move = isPlayer1 ? otherMove : move;
+        await _processTurn(freshRoomData, p1Move, p2Move, isPlayer1);
+      } else {
+        // The other player hasn't moved yet. Just store my move.
+        transaction.update(roomDoc.reference, { 
+          moveKey: move, 
+          'logs': FieldValue.arrayUnion(['相手の選択を待っています...'])
+        });
+      }
+    });
   }
   
   Future<void> _processTurn(Map<String, dynamic> roomData, dynamic p1Move, dynamic p2Move, bool amIPlayer1) async {
-    
-    final p1 = roomData['player1Party'][roomData['player1_active_index']];
-    final p2 = roomData['player2Party'][roomData['player2_active_index']];
+    final p1Party = List<Map<String, dynamic>>.from(roomData['player1Party']);
+    final p2Party = List<Map<String, dynamic>>.from(roomData['player2Party']);
+    int p1Idx = roomData['player1_active_index'];
+    int p2Idx = roomData['player2_active_index'];
+
+    final p1 = p1Party[p1Idx];
+    final p2 = p2Party[p2Idx];
     List<String> newLogs = [];
 
-    // This is a simplified version; a real game would have speed checks
-    // Player 1 goes first, then Player 2
+    // Determine turn order based on speed
+    final p1Speed = p1['spd'] as num;
+    final p2Speed = p2['spd'] as num;
 
-    // Player 1's Move
-    _processMove(p1Move, p1, p2, (roomData['player1Party'] as List), (roomData['player2Party'] as List), newLogs);
-    int p2newIdx = (p2['hp'] <= 0) ? roomData['player2_active_index'] + 1 : roomData['player2_active_index'];
+    dynamic firstMover, secondMover, firstMove, secondMove;
+    bool p1GoesFirst = p1Speed >= p2Speed; // P1 wins ties
 
-    if (p2newIdx >= roomData['player2Party'].length) {
-        newLogs.add("しょうぶに かった！");
-        await FirebaseFirestore.instance.collection('battle_rooms').doc(widget.roomId).update({
-            'status': amIPlayer1 ? 'p1_wins' : 'p2_loses',
-            'logs': FieldValue.arrayUnion(newLogs),
-        });
-        return;
+    if (p1GoesFirst) {
+        firstMover = p1; secondMover = p2;
+        firstMove = p1Move; secondMove = p2Move;
+    } else {
+        firstMover = p2; secondMover = p1;
+        firstMove = p2Move; secondMove = p1Move;
     }
-
-    // Player 2's Move (if not fainted)
-    if (p2['hp'] > 0) {
-      _processMove(p2Move, p2, p1, (roomData['player2Party'] as List), (roomData['player1Party'] as List), newLogs);
-    }
-    int p1newIdx = (p1['hp'] <= 0) ? roomData['player1_active_index'] + 1 : roomData['player1_active_index'];
     
-    if (p1newIdx >= roomData['player1Party'].length) {
-        newLogs.add("目の前が 真っ暗になった...");
-        await FirebaseFirestore.instance.collection('battle_rooms').doc(widget.roomId).update({
-            'status': amIPlayer1 ? 'p1_loses' : 'p2_wins',
-            'logs': FieldValue.arrayUnion(newLogs),
-        });
-        return;
+    // --- Turn Execution ---
+    // First Mover's turn
+    _processMove(firstMove, firstMover, secondMover, newLogs);
+    
+    // Check if second mover fainted
+    if ((secondMover['hp'] as num) <= 0) {
+        // Second mover fainted, their turn is skipped
+    } else {
+        // Second Mover's turn
+        _processMove(secondMove, secondMover, firstMover, newLogs);
     }
 
-    // Update Firestore with the results of the turn
-    await FirebaseFirestore.instance.collection('battle_rooms').doc(widget.roomId).update({
-        'player1Party': roomData['player1Party'],
-        'player2Party': roomData['player2Party'],
-        'player1_active_index': p1newIdx,
-        'player2_active_index': p2newIdx,
+    // --- Post-Turn Updates ---
+    int newP1Idx = p1Idx;
+    int newP2Idx = p2Idx;
+    if((p1['hp'] as num) <= 0) newP1Idx++;
+    if((p2['hp'] as num) <= 0) newP2Idx++;
+
+    bool p1AllFainted = newP1Idx >= p1Party.length;
+    bool p2AllFainted = newP2Idx >= p2Party.length;
+    String? statusUpdate;
+
+    if (p1AllFainted) {
+        statusUpdate = 'p2_wins';
+        newLogs.add(amIPlayer1 ? "目の前が 真っ暗になった..." : "しょうぶに かった！");
+    } else if (p2AllFainted) {
+        statusUpdate = 'p1_wins';
+        newLogs.add(amIPlayer1 ? "しょうぶに かった！" : "目の前が 真っ暗になった...");
+    } else {
+        if (newP1Idx != p1Idx) newLogs.add("ゆけっ！ ${p1Party[newP1Idx]['name']}！");
+        if (newP2Idx != p2Idx) newLogs.add("あいては ${p2Party[newP2Idx]['name']} をくりだしてきた！");
+    }
+    
+    Map<String, dynamic> updatePayload = {
+        'player1Party': p1Party,
+        'player2Party': p2Party,
+        'player1_active_index': newP1Idx,
+        'player2_active_index': newP2Idx,
         'logs': FieldValue.arrayUnion(newLogs),
         'last_move_p1': null, // Reset moves
         'last_move_p2': null,
-        'turn': roomData['turn'] == roomData['player1Id'] ? roomData['player2Id'] : roomData['player1Id'], // Swap turns
-    });
+        'turn': roomData['player1Id'], // Reset turn to P1, for simplicity. Could be who lost.
+    };
+
+    if (statusUpdate != null) updatePayload['status'] = statusUpdate;
+
+    await FirebaseFirestore.instance.collection('battle_rooms').doc(widget.roomId).update(updatePayload);
   }
 
-  void _processMove(dynamic move, dynamic user, dynamic target, List userParty, List targetParty, List<String> logs) {
+  void _processMove(dynamic move, dynamic user, dynamic target, List<String> logs) {
     final moveName = move['name'];
     final userName = user['name'];
-    final targetName = target['name'];
-
     logs.add("$userName の $moveName！");
 
     final details = move['details'];
@@ -602,7 +635,6 @@ class _OnlineBattlePageState extends State<OnlineBattlePage> {
       final res = _calculateDamage(move, user, target);
       target['hp'] = max<int>(0, (target['hp'] as num).toInt() - (res['dmg'] as num).toInt());
       if (res['msg'] != null) logs.add(res['msg'] as String);
-
     } else if (category == 'net-good-stats') {
       _applyStatChange(move, user, target, logs);
     } else {
@@ -610,7 +642,7 @@ class _OnlineBattlePageState extends State<OnlineBattlePage> {
     }
 
     if ((target['hp'] as num) <= 0) {
-      logs.add("$targetName は たおれた！");
+      logs.add("${target['name']} は たおれた！");
     }
   }
 
@@ -621,7 +653,7 @@ class _OnlineBattlePageState extends State<OnlineBattlePage> {
     final affectedPokemon = (moveTarget == 'user') ? user : target;
 
     for (var change in statChanges) {
-      final statName = (change['stat']['name'] as String).replaceFirst('special-','');
+      final statName = (change['stat']['name'] as String).replaceAll('special-','');
       if (!affectedPokemon['stat_modifiers'].containsKey(statName)) continue;
 
       final changeAmount = change['change'] as int;
@@ -683,6 +715,7 @@ class _OnlineBattlePageState extends State<OnlineBattlePage> {
    String _getStatName(String stat) {
     if (stat == 'attack') return 'こうげき';
     if (stat == 'defense') return 'ぼうぎょ';
+    if (stat == 'speed') return 'すばやさ';
     return stat;
   }
 
@@ -720,9 +753,11 @@ class _OnlineBattlePageState extends State<OnlineBattlePage> {
 
         final me = meParty[meIdx];
         final opp = oppParty[oppIdx];
-        final logs = (roomData['logs'] as List).cast<String>();
+        final logs = (roomData['logs'] as List).cast<String>().reversed.toList();
         final bool isMyTurn = roomData['turn'] == currentUser.uid;
         final bool isFinished = status.contains('wins') || status.contains('loses');
+        final bool waitingForOpponent = roomData[isPlayer1 ? 'last_move_p1' : 'last_move_p2'] != null && roomData[isPlayer1 ? 'last_move_p2' : 'last_move_p1'] == null;
+
 
         return Scaffold(
           backgroundColor: Colors.black,
@@ -753,7 +788,7 @@ class _OnlineBattlePageState extends State<OnlineBattlePage> {
                       children: [
                         Expanded(
                           child: ListView.builder(
-                            reverse: true,
+                            // reverse: true, // Already reversed the list
                             itemCount: logs.length,
                             itemBuilder: (context, i) => Text(logs[i]),
                           ),
@@ -768,7 +803,7 @@ class _OnlineBattlePageState extends State<OnlineBattlePage> {
                               children: (me['moves'] as List).map<Widget>((m) => Padding(
                                 padding: const EdgeInsets.all(4.0),
                                 child: ElevatedButton(
-                                  onPressed: isMyTurn ? () => _runTurn(roomData, m) : null,
+                                  onPressed: isMyTurn && !waitingForOpponent ? () => _runTurn(roomData, m) : null,
                                   child: Text(m['name'] as String, textAlign: TextAlign.center),
                                 ),
                               )).toList(),
