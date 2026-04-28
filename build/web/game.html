@@ -27,6 +27,8 @@
             font-weight: 900;
             font-style: italic;
             z-index: 20;
+            text-align: center;
+            padding: 10px;
         }
         .garbage-indicator {
             height: 24px;
@@ -54,9 +56,19 @@
         <button onclick="startGame('com')" class="p-6 bg-purple-600 rounded-2xl shadow-lg hover:scale-105 transition flex flex-col items-center">
             <span class="text-2xl font-bold">COMと対戦</span>
         </button>
-        <button onclick="startGame('online')" class="p-6 bg-emerald-600 rounded-2xl shadow-lg hover:scale-105 transition flex flex-col items-center">
+        <button onclick="showRoomInput()" class="p-6 bg-emerald-600 rounded-2xl shadow-lg hover:scale-105 transition flex flex-col items-center">
             <span class="text-2xl font-bold">オンライン対戦</span>
         </button>
+    </div>
+
+    <!-- Room Input Screen -->
+    <div id="room-screen" class="hidden flex flex-col items-center gap-4 w-full max-w-xs mt-10">
+        <h2 class="text-xl font-bold">ルームIDを入力</h2>
+        <input type="text" id="room-id-input" placeholder="例: 1234" class="w-full p-4 rounded-xl bg-slate-800 border-2 border-slate-700 text-center text-2xl font-mono focus:border-emerald-500 outline-none">
+        <div class="flex gap-2 w-full">
+            <button onclick="backToMenu()" class="flex-1 p-4 bg-slate-700 rounded-xl font-bold">戻る</button>
+            <button onclick="startGame('online')" class="flex-1 p-4 bg-emerald-600 rounded-xl font-bold">入室する</button>
+        </div>
     </div>
 
     <!-- Game Screen -->
@@ -72,6 +84,7 @@
                 <div class="relative">
                     <canvas id="myCanvas"></canvas>
                     <div id="my-gameover" class="game-overlay hidden text-red-500 text-3xl">GAME OVER</div>
+                    <div id="wait-overlay" class="game-overlay text-white text-xl">対戦相手を<br>待っています...</div>
                 </div>
             </div>
 
@@ -109,7 +122,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, updateDoc, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, setDoc, onSnapshot, updateDoc, collection, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Constants ---
         const COLS = 6;
@@ -125,6 +138,7 @@
         let gameActive = false;
         let gameLoopTimer = null;
         let comLoopTimer = null;
+        let currentRoomId = null;
 
         let myState = createInitialState();
         let opState = createInitialState();
@@ -150,11 +164,9 @@
             };
         }
 
-        // --- Firebase Configuration ---
         const initFirebase = async () => {
-            // For Firebase JS SDK v7.20.0 and later, measurementId is optional
             const firebaseConfig = {
-                apiKey: "AIzaSyDhqvXCs1h7lwlZlPpzd0O8Xfjie7kfoAg",
+                apiKey: "", 
                 authDomain: "evacuation-map-data.firebaseapp.com",
                 projectId: "evacuation-map-data",
                 storageBucket: "evacuation-map-data.firebasestorage.app",
@@ -166,7 +178,7 @@
             const app = initializeApp(firebaseConfig);
             auth = getAuth(app);
             db = getFirestore(app);
-            appId = typeof __app_id !== 'undefined' ? __app_id : 'puyo-ultimate-custom';
+            appId = typeof __app_id !== 'undefined' ? __app_id : 'puyo-multi-room';
 
             const initAuth = async () => {
                 if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
@@ -178,7 +190,7 @@
             await initAuth();
             onAuthStateChanged(auth, (u) => { 
                 user = u; 
-                if (user) document.getElementById('status-text').innerText = "オンライン準備完了";
+                if (user) document.getElementById('status-text').innerText = "ログイン完了";
             });
         };
 
@@ -366,62 +378,44 @@
 
         function runCOMLogic() {
             if (opState.gameOver || !gameActive || currentMode !== 'com') return;
-
             const tx = Math.floor(Math.random() * COLS);
             const puyo = createPuyo();
             puyo.x = tx;
-            
             while (isValid({ ...puyo, y: puyo.y + 1 }, opState.grid)) puyo.y++;
-            
             const pos = getPuyoPositions(puyo);
             pos.forEach((p, i) => {
                 if (p.y >= 0) opState.grid[p.y][p.x] = (i === 0 ? puyo.color1 : puyo.color2);
                 else opState.gameOver = true;
             });
-
-            let totalErased = 0;
             let erased;
             do {
                 applyGravity(opState.grid);
                 erased = checkAndErase(opState.grid);
-                totalErased += erased;
+                if (erased > 0) {
+                    opState.score += erased * 10;
+                    let attack = Math.floor(erased / 2);
+                    myState.garbagePending += attack;
+                }
             } while (erased > 0);
-
-            if (totalErased > 0) {
-                opState.score += totalErased * 10;
-                let attack = Math.floor(totalErased / 2);
-                if (opState.garbagePending > 0) {
-                    const offset = Math.min(opState.garbagePending, attack);
-                    opState.garbagePending -= offset;
-                    attack -= offset;
-                }
-                if (attack > 0) myState.garbagePending += attack;
-            } else {
-                if (opState.garbagePending > 0) {
-                    dropGarbage(opState, Math.min(opState.garbagePending, 30));
-                    opState.garbagePending = Math.max(0, opState.garbagePending - 30);
-                }
+            if (opState.garbagePending > 0) {
+                dropGarbage(opState, Math.min(opState.garbagePending, 30));
+                opState.garbagePending = Math.max(0, opState.garbagePending - 30);
             }
-
             if (opState.grid[0][2] !== 0) {
                 opState.gameOver = true;
                 document.getElementById('op-gameover').innerText = "WIN";
                 document.getElementById('op-gameover').classList.remove('hidden');
             }
-
             updateUI();
             comLoopTimer = setTimeout(runCOMLogic, 1500);
         }
 
         async function syncOnline() {
-            if (!playerNum || !user) return;
-            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'battle1');
+            if (!playerNum || !user || !currentRoomId) return;
+            const ref = doc(db, 'artifacts', appId, 'public', 'data', currentRoomId);
             const data = {};
             data[`p${playerNum}`] = JSON.stringify(myState);
-            if (myState.lastAttack > 0) {
-                // Reset internal attack state after sending
-                myState.lastAttack = 0;
-            }
+            if (myState.lastAttack > 0) myState.lastAttack = 0;
             await updateDoc(ref, data).catch(() => {});
         }
 
@@ -457,65 +451,105 @@
             if (e.key === 'ArrowUp' || e.key === 'z') triggerInput('rotate');
         });
 
+        window.showRoomInput = () => {
+            document.getElementById('menu-screen').classList.add('hidden');
+            document.getElementById('room-screen').classList.remove('hidden');
+        };
+
         window.startGame = async (mode) => {
-            if (!user) {
-                document.getElementById('status-text').innerText = "接続中...";
-                return;
+            if (!user) return;
+            
+            if (mode === 'online') {
+                const rid = document.getElementById('room-id-input').value.trim();
+                if (!rid) {
+                    alert("ルームIDを入力してください");
+                    return;
+                }
+                currentRoomId = `room_${rid}`;
             }
+
             currentMode = mode;
             myState = createInitialState();
             opState = createInitialState();
             myState.currentPuyo = createPuyo();
+            
             document.getElementById('menu-screen').classList.add('hidden');
+            document.getElementById('room-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.remove('hidden');
             document.getElementById('my-gameover').classList.add('hidden');
             document.getElementById('op-gameover').classList.add('hidden');
-
-            gameActive = true;
-            loop();
+            document.getElementById('wait-overlay').classList.add('hidden');
 
             if (mode === 'solo') {
                 document.getElementById('opponent-area').classList.add('hidden');
+                gameActive = true; loop();
             } else if (mode === 'com') {
                 document.getElementById('opponent-area').classList.remove('hidden');
                 document.getElementById('op-label').innerText = "COM";
-                runCOMLogic();
+                gameActive = true; loop(); runCOMLogic();
             } else if (mode === 'online') {
                 document.getElementById('opponent-area').classList.remove('hidden');
                 document.getElementById('op-label').innerText = "OPPONENT";
+                document.getElementById('wait-overlay').classList.remove('hidden');
                 setupOnlineMatch();
             }
         };
 
         async function setupOnlineMatch() {
-            if (!user) return;
-            const ref = doc(db, 'artifacts', appId, 'public', 'data', 'battle1');
-            onSnapshot(ref, (snap) => {
+            if (!user || !currentRoomId) return;
+            const ref = doc(db, 'artifacts', appId, 'public', 'data', currentRoomId);
+            
+            const snap = await getDoc(ref);
+            if (!snap.exists()) {
+                // ホストとして入室
+                playerNum = 1;
+                await setDoc(ref, { 
+                    p1_id: user.uid, 
+                    p1: JSON.stringify(myState), 
+                    p2: JSON.stringify(opState), 
+                    status: 'waiting' 
+                });
+            } else {
                 const data = snap.data();
-                if (!data) {
-                    setDoc(ref, { p1_id: user.uid, p1: JSON.stringify(myState), p2: JSON.stringify(opState), status: 'waiting' });
+                if (data.p1_id === user.uid) {
                     playerNum = 1;
                 } else {
-                    if (data.p1_id === user.uid) playerNum = 1;
-                    else if (data.p2_id === user.uid || !data.p2_id) {
-                        playerNum = 2;
-                        if (!data.p2_id) updateDoc(ref, { p2_id: user.uid, status: 'playing' });
+                    // ゲストとして入室
+                    playerNum = 2;
+                    await updateDoc(ref, { 
+                        p2_id: user.uid, 
+                        status: 'playing' 
+                    });
+                }
+            }
+
+            onSnapshot(ref, (s) => {
+                const data = s.data();
+                if (!data) return;
+
+                // 2人揃ったらスタート
+                if (data.status === 'playing' && !gameActive) {
+                    gameActive = true;
+                    document.getElementById('wait-overlay').classList.add('hidden');
+                    loop();
+                }
+
+                // 相手の状態を反映
+                const opNum = playerNum === 1 ? 2 : 1;
+                if (data[`p${opNum}`]) {
+                    const parsedOp = JSON.parse(data[`p${opNum}`]);
+                    if (parsedOp.lastAttack > 0) {
+                        myState.garbagePending += parsedOp.lastAttack;
                     }
-                    const opNum = playerNum === 1 ? 2 : 1;
-                    if (data[`p${opNum}`]) {
-                        const parsedOp = JSON.parse(data[`p${opNum}`]);
-                        if (parsedOp.lastAttack > 0) {
-                            myState.garbagePending += parsedOp.lastAttack;
-                        }
-                        opState = parsedOp;
-                        updateUI();
-                        if (opState.gameOver) {
-                            document.getElementById('op-gameover').innerText = "WIN";
-                            document.getElementById('op-gameover').classList.remove('hidden');
-                        }
+                    opState = parsedOp;
+                    updateUI();
+                    if (opState.gameOver) {
+                        document.getElementById('op-gameover').innerText = "WIN";
+                        document.getElementById('op-gameover').classList.remove('hidden');
+                        gameActive = false;
                     }
                 }
-            }, (error) => console.error(error));
+            }, (err) => console.error(err));
         }
 
         window.backToMenu = () => {
@@ -523,6 +557,7 @@
             clearTimeout(gameLoopTimer);
             clearTimeout(comLoopTimer);
             document.getElementById('menu-screen').classList.remove('hidden');
+            document.getElementById('room-screen').classList.add('hidden');
             document.getElementById('game-screen').classList.add('hidden');
         };
 
