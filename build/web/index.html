@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>8x8 Block Blast - Fully Responsive</title>
+    <title>8x8 Block Blast - Ranking & Scroll</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         :root {
@@ -15,18 +15,19 @@
             background-color: var(--bg-color);
             color: white;
             font-family: 'Inter', sans-serif;
-            overflow: hidden;
-            touch-action: none;
             margin: 0;
             display: flex;
             justify-content: center;
+            /* ページ全体のスクロールを防止してゲームに集中 */
+            overflow: hidden; 
+            touch-action: none;
+            height: 100vh;
         }
         
-        /* Responsive sizing based on viewport */
         .game-container {
             width: 100%;
-            max-width: 500px;
-            height: 100dvh;
+            max-width: 450px;
+            height: 100%;
             display: flex;
             flex-direction: column;
             padding: 1rem;
@@ -41,6 +42,7 @@
             padding: 8px;
             box-sizing: border-box;
             border: 4px solid #334155;
+            position: relative;
         }
 
         #grid {
@@ -55,102 +57,132 @@
         .grid-cell {
             background-color: var(--cell-empty);
             border-radius: 4px;
-            transition: background-color 0.1s ease;
         }
 
         .grid-cell.highlight {
             background-color: rgba(255, 255, 255, 0.4) !important;
         }
 
-        /* Block visuals */
+        .hand-area {
+            margin-top: 1rem;
+            display: flex;
+            justify-content: space-between;
+            gap: 0.5rem;
+            height: 90px;
+        }
+
         .piece-slot {
             flex: 1;
-            aspect-ratio: 1 / 1;
+            height: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
             background: rgba(255,255,255,0.05);
             border-radius: 12px;
-            max-width: 100px;
         }
 
         .piece-visual {
             cursor: grab;
-            position: relative;
+            touch-action: none;
         }
 
         .dragging {
             position: fixed;
             pointer-events: none;
             z-index: 1000;
-            transform: scale(1.1);
             opacity: 0.9;
+            /* 指で隠れないように垂直オフセット */
+            margin-top: -70px; 
         }
 
-        /* Color definitions */
+        /* Colors */
         .color-1 { background-color: #ff006e; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
         .color-2 { background-color: #8338ec; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
         .color-3 { background-color: #3a86ff; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
         .color-4 { background-color: #fb5607; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
         .color-5 { background-color: #ffbe0b; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
         
-        .custom-scroll::-webkit-scrollbar { width: 4px; }
-        .custom-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
+        /* Scrollable Ranking */
+        .ranking-box {
+            margin-top: 1rem;
+            flex: 1;
+            background: rgba(30, 41, 59, 0.5);
+            border: 1px solid #334155;
+            border-radius: 12px;
+            padding: 1rem;
+            display: flex;
+            flex-direction: column;
+            min-height: 0; /* flex内のスクロールに必須 */
+        }
+
+        .ranking-list {
+            overflow-y: auto;
+            flex: 1;
+            padding-right: 4px;
+        }
+
+        .ranking-list::-webkit-scrollbar {
+            width: 4px;
+        }
+        .ranking-list::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 10px;
+        }
     </style>
 </head>
-<body class="select-none">
+<body>
 
     <div class="game-container">
-        <!-- Header -->
-        <div class="flex justify-between items-center mb-4">
+        <!-- Score Header -->
+        <div class="flex justify-between items-end mb-4">
             <div>
-                <h1 class="text-xl font-black text-blue-400">BLOCK BLAST</h1>
+                <h1 class="text-xl font-black text-blue-400 leading-none">BLOCK BLAST</h1>
+                <p class="text-[10px] text-slate-500 font-bold">WORLD RANKING SYSTEM</p>
             </div>
             <div class="flex gap-4">
                 <div class="text-right">
-                    <p class="text-[10px] text-slate-400 font-bold uppercase">Best</p>
-                    <p id="high-score" class="text-lg font-mono font-bold text-yellow-400">0</p>
+                    <p class="text-[9px] text-slate-400 font-bold uppercase">Best</p>
+                    <p id="high-score" class="text-lg font-mono font-black text-yellow-400 leading-none">0</p>
                 </div>
                 <div class="text-right">
-                    <p class="text-[10px] text-slate-400 font-bold uppercase">Score</p>
-                    <p id="score" class="text-lg font-mono font-bold">0</p>
+                    <p class="text-[9px] text-slate-400 font-bold uppercase">Score</p>
+                    <p id="score" class="text-lg font-mono font-black leading-none">0</p>
                 </div>
             </div>
         </div>
 
-        <!-- Main Board -->
+        <!-- Grid Board -->
         <div id="grid-container">
             <div id="grid"></div>
         </div>
 
-        <!-- Hand Area -->
-        <div id="hand" class="mt-4 flex justify-between gap-2 w-full"></div>
+        <!-- Pieces in Hand -->
+        <div id="hand" class="hand-area"></div>
 
-        <!-- Leaderboard -->
-        <div class="mt-4 flex-1 bg-slate-800/50 rounded-xl p-3 border border-slate-700 overflow-hidden flex flex-col min-h-0">
-            <h3 class="text-[10px] font-bold text-slate-400 uppercase mb-2 flex justify-between">
-                <span>Top Players</span>
-                <span id="loading-scores" class="animate-pulse hidden">Loading...</span>
-            </h3>
-            <div id="leaderboard" class="custom-scroll overflow-y-auto flex-1 text-xs space-y-1">
-                <!-- Leaderboard data -->
+        <!-- Scrollable Ranking -->
+        <div class="ranking-box">
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="text-xs font-black text-slate-400 uppercase tracking-widest">Global Ranking</h2>
+                <span id="loading-status" class="text-[10px] text-blue-400 animate-pulse">Syncing...</span>
+            </div>
+            <div id="leaderboard" class="ranking-list space-y-2">
+                <!-- Ranked items will appear here -->
             </div>
         </div>
     </div>
 
     <!-- Game Over Screen -->
     <div id="game-over" class="hidden fixed inset-0 bg-slate-950/95 flex flex-col items-center justify-center z-[2000] p-6">
-        <h2 class="text-3xl font-black text-white mb-2">GAME OVER</h2>
-        <p id="final-score" class="text-6xl font-black text-blue-500 mb-4">0</p>
-        <div id="new-record" class="hidden text-yellow-400 font-bold animate-bounce mb-4 text-lg">NEW RECORD!</div>
+        <h2 class="text-3xl font-black text-white mb-2 italic">GAME OVER</h2>
+        <p id="final-score" class="text-7xl font-black text-blue-500 mb-2">0</p>
+        <div id="new-record" class="hidden text-yellow-400 font-bold animate-bounce mb-6 text-xl">NEW WORLD RECORD!</div>
         
-        <button onclick="resetGame()" class="w-full max-w-xs py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-xl mb-6 transition-all">
-            TRY AGAIN
+        <button onclick="resetGame()" class="w-full max-w-xs py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-xl mb-4 transition-all shadow-lg active:scale-95">
+            PLAY AGAIN
         </button>
-        <p class="text-slate-500 text-[10px] mb-2">User ID: <span id="user-id-display" class="font-mono"></span></p>
+        <div class="text-slate-500 text-[10px] font-mono opacity-50">UID: <span id="user-id-display"></span></div>
     </div>
 
-    <!-- Firebase SDK -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
@@ -169,7 +201,7 @@
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'block-blast-responsive';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'block-blast-pro';
 
         let user = null;
         let personalBest = 0;
@@ -189,24 +221,23 @@
             { shape: [[0,0],[0,1],[1,0],[1,1]], color: 4 },
             { shape: [[0,0],[1,0],[1,1]], color: 5 },
             { shape: [[0,0],[0,1],[1,0]], color: 5 },
-            { shape: [[0,0],[0,1],[0,2],[1,1]], color: 3 },
+            { shape: [[0,0],[0,1],[1,1],[1,2]], color: 1 },
+            { shape: [[0,1],[1,0],[1,1],[1,2]], color: 3 },
             { shape: [[0,0],[1,0],[2,0],[3,0]], color: 4 },
         ];
 
         async function initAuth() {
-            try {
-                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } else {
-                    await signInAnonymously(auth);
-                }
-            } catch (e) { console.error(e); }
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                await signInWithCustomToken(auth, __initial_auth_token);
+            } else {
+                await signInAnonymously(auth);
+            }
         }
 
         onAuthStateChanged(auth, (u) => {
             user = u;
             if (user) {
-                document.getElementById('user-id-display').innerText = user.uid.substring(0, 8) + '...';
+                document.getElementById('user-id-display').innerText = user.uid.substring(0, 10);
                 loadLeaderboard();
                 loadPersonalBest();
             }
@@ -251,8 +282,7 @@
                 const slot = document.createElement('div');
                 slot.className = 'piece-slot';
                 if (piece && !piece.used) {
-                    // Small size for preview in hand
-                    const visual = createPieceVisual(piece, false);
+                    const visual = createPieceVisual(piece, getCellSize() * 0.65);
                     visual.addEventListener('pointerdown', (e) => startDrag(e, idx, piece));
                     slot.appendChild(visual);
                 }
@@ -260,31 +290,26 @@
             });
         }
 
-        function createPieceVisual(piece, useBoardScale = false) {
+        function getCellSize() {
+            const gridEl = document.getElementById('grid');
+            return (gridEl.clientWidth - (GRID_SIZE - 1) * 4) / GRID_SIZE;
+        }
+
+        function createPieceVisual(piece, size) {
             const container = document.createElement('div');
             container.className = 'piece-visual relative';
-            
-            // Calculate base cell size
-            const boardRect = document.getElementById('grid').getBoundingClientRect();
-            const boardCellSize = (boardRect.width - (7 * 4)) / 8; // rect width - gaps
-            const handCellSize = boardCellSize * 0.6; // Smaller in hand
-            
-            const cellSize = useBoardScale ? boardCellSize : handCellSize;
-            const gap = 4 * (cellSize / boardCellSize);
-
+            const gap = 4;
             const maxR = Math.max(...piece.shape.map(p => p[0])) + 1;
             const maxC = Math.max(...piece.shape.map(p => p[1])) + 1;
-            
-            container.style.width = `${maxC * cellSize + (maxC-1)*gap}px`;
-            container.style.height = `${maxR * cellSize + (maxR-1)*gap}px`;
-
+            container.style.width = `${maxC * size + (maxC-1) * gap}px`;
+            container.style.height = `${maxR * size + (maxR-1) * gap}px`;
             piece.shape.forEach(([r, c]) => {
                 const block = document.createElement('div');
                 block.className = `absolute color-${piece.color} rounded-[3px]`;
-                block.style.width = `${cellSize}px`;
-                block.style.height = `${cellSize}px`;
-                block.style.top = `${r * (cellSize + gap)}px`;
-                block.style.left = `${c * (cellSize + gap)}px`;
+                block.style.width = `${size}px`;
+                block.style.height = `${size}px`;
+                block.style.top = `${r * (size + gap)}px`;
+                block.style.left = `${c * (size + gap)}px`;
                 container.appendChild(block);
             });
             return container;
@@ -295,19 +320,15 @@
             dragInfo = { 
                 index, 
                 piece, 
-                offset: { 
-                    x: e.clientX - rect.left, 
-                    y: e.clientY - rect.top 
-                } 
+                offset: { x: e.clientX - rect.left, y: e.clientY - rect.top } 
             };
             
-            // Create drag visual matching board scale
-            draggingElement = createPieceVisual(piece, true);
+            draggingElement = createPieceVisual(piece, getCellSize());
             draggingElement.classList.add('dragging');
             updateDragPosition(e.clientX, e.clientY);
             document.body.appendChild(draggingElement);
-
             e.currentTarget.style.opacity = '0';
+            
             window.addEventListener('pointermove', onMove);
             window.addEventListener('pointerup', onEnd);
         }
@@ -319,14 +340,14 @@
 
         function updateDragPosition(x, y) {
             if (!draggingElement) return;
-            // Shift up by 60px so finger doesn't block the piece
             draggingElement.style.left = `${x - dragInfo.offset.x}px`;
-            draggingElement.style.top = `${y - dragInfo.offset.y - 60}px`;
+            draggingElement.style.top = `${y - dragInfo.offset.y}px`;
         }
 
         function highlightGrid(x, y) {
             document.querySelectorAll('.grid-cell').forEach(c => c.classList.remove('highlight'));
-            const coords = getGridAt(x, y - 60);
+            const checkY = y - 70; // 浮き上がりオフセット分
+            const coords = getGridAt(x, checkY);
             if (coords && canPlace(dragInfo.piece, coords.r, coords.c)) {
                 dragInfo.piece.shape.forEach(([dr, dc]) => {
                     const cell = document.getElementById(`cell-${coords.r + dr}-${coords.c + dc}`);
@@ -338,12 +359,15 @@
         function getGridAt(x, y) {
             const rect = document.getElementById('grid').getBoundingClientRect();
             if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
-            const size = rect.width / GRID_SIZE;
-            return { r: Math.floor((y - rect.top) / size), c: Math.floor((x - rect.left) / size) };
+            const sizeWithGap = rect.width / GRID_SIZE;
+            const r = Math.floor((y - rect.top) / sizeWithGap);
+            const c = Math.floor((x - rect.left) / sizeWithGap);
+            return (r >= 0 && r < GRID_SIZE && c >= 0 && c < GRID_SIZE) ? { r, c } : null;
         }
 
         function onEnd(e) {
-            const coords = getGridAt(e.clientX, e.clientY - 60);
+            const checkY = e.clientY - 70;
+            const coords = getGridAt(e.clientX, checkY);
             if (coords && canPlace(dragInfo.piece, coords.r, coords.c)) {
                 placePiece(dragInfo.piece, coords.r, coords.c);
                 currentHand[dragInfo.index].used = true;
@@ -351,7 +375,6 @@
                 if (currentHand.every(p => p.used)) generateHand();
                 checkGameOver();
             }
-
             if (draggingElement) draggingElement.remove();
             draggingElement = null;
             window.removeEventListener('pointermove', onMove);
@@ -436,19 +459,26 @@
         function loadLeaderboard() {
             if (!user) return;
             const scoresRef = collection(db, 'artifacts', appId, 'public', 'data', 'scores');
-            onSnapshot(query(scoresRef, limit(30)), (snap) => {
+            onSnapshot(query(scoresRef, limit(50)), (snap) => {
                 const scores = [];
                 snap.forEach(d => scores.push(d.data()));
                 scores.sort((a, b) => b.score - a.score);
-                document.getElementById('leaderboard').innerHTML = scores.slice(0, 10).map((s, i) => `
-                    <div class="flex justify-between items-center ${s.userId === user?.uid ? 'text-blue-400 font-bold' : 'text-slate-300'}">
-                        <span class="flex gap-2">
-                            <span class="opacity-40 w-3">${i + 1}.</span>
-                            <span class="truncate w-24 font-mono">${s.userId.substring(0, 6)}...</span>
-                        </span>
-                        <span class="font-bold">${s.score.toLocaleString()}</span>
+                
+                document.getElementById('loading-status').innerText = "Live";
+                document.getElementById('leaderboard').innerHTML = scores.map((s, i) => `
+                    <div class="flex justify-between items-center p-2 rounded-lg ${s.userId === user?.uid ? 'bg-blue-600/20 border border-blue-500/30' : 'bg-slate-800/40'}">
+                        <div class="flex items-center gap-3">
+                            <span class="text-[10px] font-black w-5 ${i < 3 ? 'text-yellow-400' : 'text-slate-500'}">${i + 1}</span>
+                            <div class="flex flex-col">
+                                <span class="text-[10px] font-mono text-slate-300 truncate w-24">${s.userId}</span>
+                                <span class="text-[8px] text-slate-500 uppercase">${new Date(s.timestamp).toLocaleDateString()}</span>
+                            </div>
+                        </div>
+                        <span class="text-xs font-black text-white">${s.score.toLocaleString()}</span>
                     </div>
                 `).join('');
+            }, (err) => {
+                document.getElementById('loading-status').innerText = "Offline";
             });
         }
 
