@@ -9,5 +9,30 @@
     "frameworksBackend": {
       "region": "asia-east1"
     }
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "evacuation-map-data",
+          "appId": "1:1055923693779:android:1aff97c338de7b77ad8c26",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "evacuation-map-data",
+          "configurations": {
+            "android": "1:1055923693779:android:1aff97c338de7b77ad8c26",
+            "web": "1:1055923693779:web:591d839d20611a82ad8c26"
+          }
+        }
+      }
+    }
+  },
+  "auth": {
+    "providers": {
+      "anonymous": true
+    }
   }
 }

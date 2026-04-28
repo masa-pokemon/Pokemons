@@ -1,5 +1,7 @@
 {
   "projects": {
     "default": "evacuation-map-data"
-  }
+  },
+  "targets": {},
+  "etags": {}
 }

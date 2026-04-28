@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1055923693779",
+    "project_id": "evacuation-map-data",
+    "storage_bucket": "evacuation-map-data.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1055923693779:android:1aff97c338de7b77ad8c26",
+        "android_client_info": {
+          "package_name": "com.example.myapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBSrVLv6mhagW-Cp_wRU3nLS7LyOWk6vvE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
