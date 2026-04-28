@@ -1,41 +1,468 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>8x8 Block Blast - Fully Responsive</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --grid-bg: #1e293b;
+            --cell-empty: #334155;
+        }
+        body {
+            background-color: var(--bg-color);
+            color: white;
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            touch-action: none;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+        }
+        
+        /* Responsive sizing based on viewport */
+        .game-container {
+            width: 100%;
+            max-width: 500px;
+            height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+            box-sizing: border-box;
+        }
 
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
+        #grid-container {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            background-color: var(--grid-bg);
+            border-radius: 12px;
+            padding: 8px;
+            box-sizing: border-box;
+            border: 4px solid #334155;
+        }
 
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+        #grid {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            grid-template-rows: repeat(8, 1fr);
+            gap: 4px;
+            width: 100%;
+            height: 100%;
+        }
 
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
-  <base href="./">
+        .grid-cell {
+            background-color: var(--cell-empty);
+            border-radius: 4px;
+            transition: background-color 0.1s ease;
+        }
 
-  <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+        .grid-cell.highlight {
+            background-color: rgba(255, 255, 255, 0.4) !important;
+        }
 
-  <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="myapp">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+        /* Block visuals */
+        .piece-slot {
+            flex: 1;
+            aspect-ratio: 1 / 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            max-width: 100px;
+        }
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+        .piece-visual {
+            cursor: grab;
+            position: relative;
+        }
 
-  <title>Pokemon</title>
-  <link rel="manifest" href="manifest.json">
+        .dragging {
+            position: fixed;
+            pointer-events: none;
+            z-index: 1000;
+            transform: scale(1.1);
+            opacity: 0.9;
+        }
+
+        /* Color definitions */
+        .color-1 { background-color: #ff006e; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
+        .color-2 { background-color: #8338ec; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
+        .color-3 { background-color: #3a86ff; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
+        .color-4 { background-color: #fb5607; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
+        .color-5 { background-color: #ffbe0b; box-shadow: inset -2px -2px 4px rgba(0,0,0,0.3); }
+        
+        .custom-scroll::-webkit-scrollbar { width: 4px; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
+    </style>
 </head>
-<body>
-  <script>
-    window.flutterWebRenderer = "canvaskit";
-  </script>
-  <script src="flutter_bootstrap.js" async></script>
+<body class="select-none">
+
+    <div class="game-container">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-4">
+            <div>
+                <h1 class="text-xl font-black text-blue-400">BLOCK BLAST</h1>
+            </div>
+            <div class="flex gap-4">
+                <div class="text-right">
+                    <p class="text-[10px] text-slate-400 font-bold uppercase">Best</p>
+                    <p id="high-score" class="text-lg font-mono font-bold text-yellow-400">0</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-[10px] text-slate-400 font-bold uppercase">Score</p>
+                    <p id="score" class="text-lg font-mono font-bold">0</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Board -->
+        <div id="grid-container">
+            <div id="grid"></div>
+        </div>
+
+        <!-- Hand Area -->
+        <div id="hand" class="mt-4 flex justify-between gap-2 w-full"></div>
+
+        <!-- Leaderboard -->
+        <div class="mt-4 flex-1 bg-slate-800/50 rounded-xl p-3 border border-slate-700 overflow-hidden flex flex-col min-h-0">
+            <h3 class="text-[10px] font-bold text-slate-400 uppercase mb-2 flex justify-between">
+                <span>Top Players</span>
+                <span id="loading-scores" class="animate-pulse hidden">Loading...</span>
+            </h3>
+            <div id="leaderboard" class="custom-scroll overflow-y-auto flex-1 text-xs space-y-1">
+                <!-- Leaderboard data -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div id="game-over" class="hidden fixed inset-0 bg-slate-950/95 flex flex-col items-center justify-center z-[2000] p-6">
+        <h2 class="text-3xl font-black text-white mb-2">GAME OVER</h2>
+        <p id="final-score" class="text-6xl font-black text-blue-500 mb-4">0</p>
+        <div id="new-record" class="hidden text-yellow-400 font-bold animate-bounce mb-4 text-lg">NEW RECORD!</div>
+        
+        <button onclick="resetGame()" class="w-full max-w-xs py-4 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black text-xl mb-6 transition-all">
+            TRY AGAIN
+        </button>
+        <p class="text-slate-500 text-[10px] mb-2">User ID: <span id="user-id-display" class="font-mono"></span></p>
+    </div>
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, getDoc, collection, query, onSnapshot, limit } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyDhqvXCs1h7lwlZlPpzd0O8Xfjie7kfoAg",
+            authDomain: "evacuation-map-data.firebaseapp.com",
+            projectId: "evacuation-map-data",
+            storageBucket: "evacuation-map-data.firebasestorage.app",
+            messagingSenderId: "1055923693779",
+            appId: "1:1055923693779:web:591d839d20611a82ad8c26",
+            measurementId: "G-JBW84Y5HNC"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'block-blast-responsive';
+
+        let user = null;
+        let personalBest = 0;
+        const GRID_SIZE = 8;
+        let grid = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(0));
+        let score = 0;
+        let currentHand = [null, null, null];
+        let draggingElement = null;
+        let dragInfo = { index: null, offset: { x: 0, y: 0 }, piece: null };
+
+        const PIECE_DEFS = [
+            { shape: [[0,0]], color: 1 },
+            { shape: [[0,0],[0,1]], color: 2 },
+            { shape: [[0,0],[1,0]], color: 2 },
+            { shape: [[0,0],[0,1],[0,2]], color: 3 },
+            { shape: [[0,0],[1,0],[2,0]], color: 3 },
+            { shape: [[0,0],[0,1],[1,0],[1,1]], color: 4 },
+            { shape: [[0,0],[1,0],[1,1]], color: 5 },
+            { shape: [[0,0],[0,1],[1,0]], color: 5 },
+            { shape: [[0,0],[0,1],[0,2],[1,1]], color: 3 },
+            { shape: [[0,0],[1,0],[2,0],[3,0]], color: 4 },
+        ];
+
+        async function initAuth() {
+            try {
+                if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } else {
+                    await signInAnonymously(auth);
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        onAuthStateChanged(auth, (u) => {
+            user = u;
+            if (user) {
+                document.getElementById('user-id-display').innerText = user.uid.substring(0, 8) + '...';
+                loadLeaderboard();
+                loadPersonalBest();
+            }
+        });
+
+        function initGrid() {
+            const gridEl = document.getElementById('grid');
+            gridEl.innerHTML = '';
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'grid-cell';
+                    cell.id = `cell-${r}-${c}`;
+                    gridEl.appendChild(cell);
+                }
+            }
+            generateHand();
+            renderGrid();
+        }
+
+        function renderGrid() {
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    const cell = document.getElementById(`cell-${r}-${c}`);
+                    cell.className = 'grid-cell' + (grid[r][c] ? ` color-${grid[r][c]}` : '');
+                }
+            }
+        }
+
+        function generateHand() {
+            currentHand = [0, 1, 2].map(() => ({
+                ...PIECE_DEFS[Math.floor(Math.random() * PIECE_DEFS.length)],
+                used: false
+            }));
+            renderHand();
+        }
+
+        function renderHand() {
+            const handEl = document.getElementById('hand');
+            handEl.innerHTML = '';
+            currentHand.forEach((piece, idx) => {
+                const slot = document.createElement('div');
+                slot.className = 'piece-slot';
+                if (piece && !piece.used) {
+                    // Small size for preview in hand
+                    const visual = createPieceVisual(piece, false);
+                    visual.addEventListener('pointerdown', (e) => startDrag(e, idx, piece));
+                    slot.appendChild(visual);
+                }
+                handEl.appendChild(slot);
+            });
+        }
+
+        function createPieceVisual(piece, useBoardScale = false) {
+            const container = document.createElement('div');
+            container.className = 'piece-visual relative';
+            
+            // Calculate base cell size
+            const boardRect = document.getElementById('grid').getBoundingClientRect();
+            const boardCellSize = (boardRect.width - (7 * 4)) / 8; // rect width - gaps
+            const handCellSize = boardCellSize * 0.6; // Smaller in hand
+            
+            const cellSize = useBoardScale ? boardCellSize : handCellSize;
+            const gap = 4 * (cellSize / boardCellSize);
+
+            const maxR = Math.max(...piece.shape.map(p => p[0])) + 1;
+            const maxC = Math.max(...piece.shape.map(p => p[1])) + 1;
+            
+            container.style.width = `${maxC * cellSize + (maxC-1)*gap}px`;
+            container.style.height = `${maxR * cellSize + (maxR-1)*gap}px`;
+
+            piece.shape.forEach(([r, c]) => {
+                const block = document.createElement('div');
+                block.className = `absolute color-${piece.color} rounded-[3px]`;
+                block.style.width = `${cellSize}px`;
+                block.style.height = `${cellSize}px`;
+                block.style.top = `${r * (cellSize + gap)}px`;
+                block.style.left = `${c * (cellSize + gap)}px`;
+                container.appendChild(block);
+            });
+            return container;
+        }
+
+        function startDrag(e, index, piece) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            dragInfo = { 
+                index, 
+                piece, 
+                offset: { 
+                    x: e.clientX - rect.left, 
+                    y: e.clientY - rect.top 
+                } 
+            };
+            
+            // Create drag visual matching board scale
+            draggingElement = createPieceVisual(piece, true);
+            draggingElement.classList.add('dragging');
+            updateDragPosition(e.clientX, e.clientY);
+            document.body.appendChild(draggingElement);
+
+            e.currentTarget.style.opacity = '0';
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onEnd);
+        }
+
+        function onMove(e) {
+            updateDragPosition(e.clientX, e.clientY);
+            highlightGrid(e.clientX, e.clientY);
+        }
+
+        function updateDragPosition(x, y) {
+            if (!draggingElement) return;
+            // Shift up by 60px so finger doesn't block the piece
+            draggingElement.style.left = `${x - dragInfo.offset.x}px`;
+            draggingElement.style.top = `${y - dragInfo.offset.y - 60}px`;
+        }
+
+        function highlightGrid(x, y) {
+            document.querySelectorAll('.grid-cell').forEach(c => c.classList.remove('highlight'));
+            const coords = getGridAt(x, y - 60);
+            if (coords && canPlace(dragInfo.piece, coords.r, coords.c)) {
+                dragInfo.piece.shape.forEach(([dr, dc]) => {
+                    const cell = document.getElementById(`cell-${coords.r + dr}-${coords.c + dc}`);
+                    if (cell) cell.classList.add('highlight');
+                });
+            }
+        }
+
+        function getGridAt(x, y) {
+            const rect = document.getElementById('grid').getBoundingClientRect();
+            if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) return null;
+            const size = rect.width / GRID_SIZE;
+            return { r: Math.floor((y - rect.top) / size), c: Math.floor((x - rect.left) / size) };
+        }
+
+        function onEnd(e) {
+            const coords = getGridAt(e.clientX, e.clientY - 60);
+            if (coords && canPlace(dragInfo.piece, coords.r, coords.c)) {
+                placePiece(dragInfo.piece, coords.r, coords.c);
+                currentHand[dragInfo.index].used = true;
+                checkLines();
+                if (currentHand.every(p => p.used)) generateHand();
+                checkGameOver();
+            }
+
+            if (draggingElement) draggingElement.remove();
+            draggingElement = null;
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onEnd);
+            document.querySelectorAll('.grid-cell').forEach(c => c.classList.remove('highlight'));
+            renderHand();
+            renderGrid();
+        }
+
+        function canPlace(piece, r, c) {
+            return piece.shape.every(([dr, dc]) => {
+                const nr = r + dr, nc = c + dc;
+                return nr >= 0 && nr < GRID_SIZE && nc >= 0 && nc < GRID_SIZE && grid[nr][nc] === 0;
+            });
+        }
+
+        function placePiece(piece, r, c) {
+            piece.shape.forEach(([dr, dc]) => grid[r + dr][c + dc] = piece.color);
+            score += piece.shape.length;
+            document.getElementById('score').innerText = score;
+        }
+
+        function checkLines() {
+            let fullR = [], fullC = [];
+            for (let i = 0; i < GRID_SIZE; i++) {
+                if (grid[i].every(v => v !== 0)) fullR.push(i);
+                let colFull = true;
+                for (let j = 0; j < GRID_SIZE; j++) if (grid[j][i] === 0) { colFull = false; break; }
+                if (colFull) fullC.push(i);
+            }
+            fullR.forEach(r => grid[r].fill(0));
+            fullC.forEach(c => { for (let r = 0; r < GRID_SIZE; r++) grid[r][c] = 0; });
+            if (fullR.length || fullC.length) {
+                score += (fullR.length + fullC.length) * 100;
+                document.getElementById('score').innerText = score;
+            }
+        }
+
+        async function checkGameOver() {
+            const playable = currentHand.filter(p => p && !p.used);
+            if (playable.length === 0) return;
+            let possible = false;
+            for (let p of playable) {
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    for (let c = 0; c < GRID_SIZE; c++) {
+                        if (canPlace(p, r, c)) { possible = true; break; }
+                    }
+                    if (possible) break;
+                }
+                if (possible) break;
+            }
+            if (!possible) {
+                document.getElementById('final-score').innerText = score;
+                document.getElementById('game-over').classList.remove('hidden');
+                if (score > personalBest) {
+                    personalBest = score;
+                    document.getElementById('high-score').innerText = personalBest;
+                    document.getElementById('new-record').classList.remove('hidden');
+                    await saveScore(score);
+                }
+            }
+        }
+
+        async function saveScore(s) {
+            if (!user) return;
+            try {
+                const scoreRef = doc(db, 'artifacts', appId, 'public', 'data', 'scores', user.uid);
+                await setDoc(scoreRef, { userId: user.uid, score: s, timestamp: Date.now() });
+            } catch (e) { console.error(e); }
+        }
+
+        async function loadPersonalBest() {
+            if (!user) return;
+            const scoreRef = doc(db, 'artifacts', appId, 'public', 'data', 'scores', user.uid);
+            const snap = await getDoc(scoreRef);
+            if (snap.exists()) {
+                personalBest = snap.data().score || 0;
+                document.getElementById('high-score').innerText = personalBest;
+            }
+        }
+
+        function loadLeaderboard() {
+            if (!user) return;
+            const scoresRef = collection(db, 'artifacts', appId, 'public', 'data', 'scores');
+            onSnapshot(query(scoresRef, limit(30)), (snap) => {
+                const scores = [];
+                snap.forEach(d => scores.push(d.data()));
+                scores.sort((a, b) => b.score - a.score);
+                document.getElementById('leaderboard').innerHTML = scores.slice(0, 10).map((s, i) => `
+                    <div class="flex justify-between items-center ${s.userId === user?.uid ? 'text-blue-400 font-bold' : 'text-slate-300'}">
+                        <span class="flex gap-2">
+                            <span class="opacity-40 w-3">${i + 1}.</span>
+                            <span class="truncate w-24 font-mono">${s.userId.substring(0, 6)}...</span>
+                        </span>
+                        <span class="font-bold">${s.score.toLocaleString()}</span>
+                    </div>
+                `).join('');
+            });
+        }
+
+        window.resetGame = () => {
+            grid = Array(GRID_SIZE).fill().map(() => Array(GRID_SIZE).fill(0));
+            score = 0;
+            document.getElementById('score').innerText = score;
+            document.getElementById('game-over').classList.add('hidden');
+            document.getElementById('new-record').classList.add('hidden');
+            initGrid();
+        };
+
+        initAuth();
+        initGrid();
+    </script>
 </body>
 </html>
