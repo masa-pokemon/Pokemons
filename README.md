@@ -1,4 +1,4 @@
-# myapp
+# ポケモンのゲームを作っています。
 
 A new Flutter project.
 
