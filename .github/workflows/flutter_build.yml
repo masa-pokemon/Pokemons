@@ -1,0 +1,26 @@
+# .github/workflow/flutter_build.yml
+name: "Flutter Build Deploy"
+"on":
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      # *****************************************************
+      # * SETUP
+      # *****************************************************
+      - uses: subosito/flutter-action@v2
+        with:
+          # バージョンの指定
+          flutter-version: "3.13.4"
+          # キャッシュの有効化
+          cache: true
+
+      # *****************************************************
+      # * Build
+      # *****************************************************
+      - run: flutter pub get
+      - run: flutter build web -t lib/main.dart --web-renderer canvaskit
