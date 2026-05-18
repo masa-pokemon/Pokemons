@@ -1,10 +1,10 @@
-# .github/workflow/flutter_build.yml
 name: "Flutter Build Deploy"
-"on":
+on:
   push:
     branches:
       - develop
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -12,6 +12,10 @@ jobs:
       # *****************************************************
       # * SETUP
       # *****************************************************
+      # 1. ADD THIS STEP FIRST TO FETCH YOUR CODE
+      - uses: actions/checkout@v4
+
+      # 2. Setup Flutter environment
       - uses: subosito/flutter-action@v2
         with:
           # バージョンの指定
