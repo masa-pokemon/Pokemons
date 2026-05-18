@@ -1,0 +1,1848 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ポケカ 一人回し＆オンライン対戦シミュレーター</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        /* カスタムスクロールバー */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        /* 3Dコインスピン */
+        .coin-spin {
+            animation: spin 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) infinite;
+            transform-style: preserve-3d;
+        }
+        @keyframes spin {
+            0% { transform: rotateY(0deg); }
+            100% { transform: rotateY(1800deg); }
+        }
+
+        /* パラダイスリゾートに守られたコダックの輝き効果 */
+        .koduck-buff {
+            animation: goldGlow 2s infinite alternate;
+            box-shadow: 0 0 15px #f59e0b;
+            border: 3px solid #f59e0b !important;
+        }
+        @keyframes goldGlow {
+            0% { box-shadow: 0 0 8px #d97706; }
+            100% { box-shadow: 0 0 20px #fbbf24; }
+        }
+
+        /* ドラッグホバー時のドロップエリアのインジケータ */
+        .drop-hover {
+            background-color: rgba(59, 130, 246, 0.25) !important;
+            border-color: #3b82f6 !important;
+            border-style: dashed !important;
+            transform: scale(1.02);
+        }
+
+        /* カードのホバー時3D傾き効果 */
+        .card-item {
+            transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease;
+        }
+        .card-item:hover {
+            transform: translateY(-8px) scale(1.05);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.4);
+            z-index: 50;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans select-none">
+
+    <!-- ヘッダー -->
+    <header class="bg-slate-900 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between gap-4 shadow-lg">
+        <div class="flex items-center gap-3">
+            <span class="text-3xl">🎴</span>
+            <div>
+                <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+                    ポケカ ターン制マルチ対戦シミュレーター
+                    <span class="text-xs bg-amber-500/20 text-amber-400 border border-amber-500/30 px-2 py-0.5 rounded">HTML5 Pro</span>
+                </h1>
+                <p class="text-xs text-slate-400">一人回し & Firestore同期ハイブリッド</p>
+            </div>
+        </div>
+
+        <!-- ルーム＆デッキコントロール -->
+        <div class="flex flex-wrap items-center gap-4">
+            <!-- モード切り替え -->
+            <div class="bg-slate-950 p-1 rounded-lg border border-slate-800 flex items-center gap-1">
+                <button id="modeSoloBtn" class="px-3 py-1.5 rounded text-xs font-bold transition bg-blue-600 text-white" onclick="switchGameMode('solo')">
+                    <i class="fa-solid fa-circle-user mr-1"></i>一人回し
+                </button>
+                <button id="modeOnlineBtn" class="px-3 py-1.5 rounded text-xs font-bold transition text-slate-400 hover:text-white" onclick="switchGameMode('online')">
+                    <i class="fa-solid fa-globe mr-1"></i>オンライン対戦
+                </button>
+            </div>
+
+            <!-- デッキ読込 -->
+            <div class="flex items-center gap-2 bg-slate-950 p-1 rounded-lg border border-slate-800">
+                <input type="text" id="deckIdInput" class="bg-transparent text-xs text-white px-3 py-1.5 w-40 outline-none placeholder-slate-600" placeholder="デッキID (例: QigQLH)">
+                <button onclick="loadDeckFromId()" class="bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs px-4 py-1.5 rounded transition">
+                    デッキ読込
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- オンライン対戦コントロールエリア -->
+    <div id="onlinePanel" class="bg-slate-900 border-b border-slate-800 px-6 py-3 flex flex-wrap items-center justify-between gap-4 hidden">
+        <div class="flex items-center gap-3">
+            <button onclick="createRoom()" class="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2 rounded transition flex items-center gap-1">
+                <i class="fa-solid fa-plus"></i>部屋を作る
+            </button>
+            <span class="text-slate-600">|</span>
+            <div class="flex items-center gap-2">
+                <input type="text" id="roomIdInput" class="bg-slate-950 border border-slate-800 text-xs text-white px-3 py-2 rounded w-32 outline-none" placeholder="部屋コード">
+                <button onclick="joinRoom()" class="bg-green-600 hover:bg-green-500 text-white text-xs font-bold px-4 py-2 rounded transition">
+                    入室
+                </button>
+            </div>
+        </div>
+        <div class="flex items-center gap-3 text-xs">
+            <div id="connectionStatus" class="text-slate-400 flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-red-500 inline-block"></span>
+                オフライン接続
+            </div>
+            <div id="currentRoomText" class="text-amber-400 font-bold hidden"></div>
+            <!-- ロール切り替えトグル (疑似マルチプレイヤーの確認用) -->
+            <div id="roleToggle" class="bg-slate-950 px-2 py-1 rounded border border-slate-800 flex items-center gap-1 hidden">
+                <span class="text-slate-400 text-[10px] mr-1">テスト用ロール:</span>
+                <button id="roleHostBtn" class="bg-amber-500 text-slate-950 px-2 py-0.5 rounded text-[10px] font-bold" onclick="setTestRole(true)">Host</button>
+                <button id="roleGuestBtn" class="text-slate-400 px-2 py-0.5 rounded text-[10px]" onclick="setTestRole(false)">Guest</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- アラート/ステータスバー -->
+    <div id="turnBanner" class="bg-amber-500 text-slate-950 text-center py-2 text-xs font-bold flex items-center justify-center gap-2 shadow-inner transition-colors duration-300">
+        <i class="fa-solid fa-triangle-exclamation"></i>
+        <span>対戦を始める前に、必ず「たねポケモン」を手札からバトル場に配置してください！</span>
+    </div>
+
+    <!-- メインボードレイアウト -->
+    <main class="flex-1 flex flex-col xl:flex-row p-4 gap-4 overflow-hidden">
+        
+        <!-- 左列: 🏆 サイド -->
+        <section class="xl:w-48 bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-3 min-h-[180px] xl:min-h-0">
+            <div class="flex items-center justify-between">
+                <h2 class="text-sm font-bold text-red-400 flex items-center gap-1">
+                    <span class="text-lg">🏆</span> サイド
+                </h2>
+                <span id="sideCount" class="bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded text-xs font-bold">0</span>
+            </div>
+            <div id="zone-side" class="flex-1 bg-slate-950/40 border border-dashed border-slate-800 rounded-lg p-2 flex xl:flex-col gap-2 justify-center items-center overflow-auto" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="handleDrop(event, 'side')">
+                <!-- サイドカードが自動で6枚裏向きに並びます -->
+            </div>
+        </section>
+
+        <!-- 中央列: メインプレイフィールド -->
+        <section class="flex-1 flex flex-col gap-4">
+            <!-- 👿 相手のオンライン盤面 (オンラインモード時のみ、ドラッグ不可で表示) -->
+            <div id="opponentField" class="bg-red-950/20 border border-red-900/20 rounded-xl p-4 hidden">
+                <div class="flex items-center justify-between mb-3 text-xs">
+                    <h3 class="text-red-400 font-bold flex items-center gap-1"><i class="fa-solid fa-ghost"></i> 対戦相手の盤面 (リアルタイム)</h3>
+                    <div class="flex gap-4 text-slate-400">
+                        <span>手札: <strong id="oppHandVal" class="text-white">0</strong>枚</span>
+                        <span>山札: <strong id="oppDeckVal" class="text-white">0</strong>枚</span>
+                        <span>サイド: <strong id="oppSideVal" class="text-white">0</strong>枚</span>
+                        <span>トラッシュ: <strong id="oppTrashVal" class="text-white">0</strong>枚</span>
+                    </div>
+                </div>
+                
+                <!-- 相手のバトル場とベンチ -->
+                <div class="grid grid-cols-6 gap-3">
+                    <div class="col-span-4 bg-slate-950/30 p-2 rounded-lg border border-slate-900">
+                        <span class="text-[10px] text-slate-500 font-bold block mb-1">バトル場</span>
+                        <div id="opp-battle" class="h-28 flex items-center justify-center text-xs text-slate-600">空</div>
+                    </div>
+                    <div class="col-span-2 bg-slate-950/30 p-2 rounded-lg border border-slate-900">
+                        <span class="text-[10px] text-slate-500 font-bold block mb-1">スタジアム</span>
+                        <div id="opp-stadium" class="h-28 flex items-center justify-center text-xs text-slate-600">空</div>
+                    </div>
+                </div>
+                <div class="grid grid-cols-5 gap-3 mt-3">
+                    <div class="bg-slate-950/20 p-2 rounded-lg border border-slate-900 min-h-[120px]" id="opp-bench1"></div>
+                    <div class="bg-slate-950/20 p-2 rounded-lg border border-slate-900 min-h-[120px]" id="opp-bench2"></div>
+                    <div class="bg-slate-950/20 p-2 rounded-lg border border-slate-900 min-h-[120px]" id="opp-bench3"></div>
+                    <div class="bg-slate-950/20 p-2 rounded-lg border border-slate-900 min-h-[120px]" id="opp-bench4"></div>
+                    <div class="bg-slate-950/20 p-2 rounded-lg border border-slate-900 min-h-[120px]" id="opp-bench5"></div>
+                </div>
+            </div>
+
+            <!-- バトル場 & スタジアム -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="md:col-span-2 flex flex-col gap-2">
+                    <h3 class="text-xs font-bold text-slate-400 flex items-center gap-1"><span class="text-sm">⚔️</span> バトル場</h3>
+                    <div id="zone-battleField" class="h-40 bg-blue-950/10 border-2 border-blue-900/30 rounded-xl p-3 flex items-center gap-4 overflow-auto" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="handleDrop(event, 'battleField')">
+                        <!-- ここにたねポケモン、進化、エネルギーが重ねて表示されます -->
+                        <span class="text-xs text-slate-600 m-auto">ここに「たねポケモン」を置いてスタート！</span>
+                    </div>
+                </div>
+                <div class="flex flex-col gap-2">
+                    <h3 class="text-xs font-bold text-slate-400 flex items-center gap-1"><span class="text-sm">🏟️</span> スタジアム</h3>
+                    <div id="zone-stadium" class="h-40 bg-green-950/10 border-2 border-green-900/30 rounded-xl p-3 flex items-center justify-center overflow-auto" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="handleDrop(event, 'stadium')">
+                        <span class="text-xs text-slate-600">スタジアム未配置</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ベンチ -->
+            <div class="flex flex-col gap-2">
+                <h3 class="text-xs font-bold text-slate-400 flex items-center gap-1"><span class="text-sm">🪑</span> ベンチ (個別スロット)</h3>
+                <div class="grid grid-cols-1 sm:grid-cols-5 gap-3">
+                    <div id="zone-bench1" class="min-h-[150px] bg-slate-900/40 border-2 border-slate-800/60 rounded-xl p-2 flex flex-col" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="handleDrop(event, 'bench1')">
+                        <span class="text-[10px] text-slate-600 font-bold block mb-1">ベンチ 1</span>
+                    </div>
+                    <div id="zone-bench2" class="min-h-[150px] bg-slate-900/40 border-2 border-slate-800/60 rounded-xl p-2 flex flex-col" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="handleDrop(event, 'bench2')">
+                        <span class="text-[10px] text-slate-600 font-bold block mb-1">ベンチ 2</span>
+                    </div>
+                    <div id="zone-bench3" class="min-h-[150px] bg-slate-900/40 border-2 border-slate-800/60 rounded-xl p-2 flex flex-col" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="handleDrop(event, 'bench3')">
+                        <span class="text-[10px] text-slate-600 font-bold block mb-1">ベンチ 3</span>
+                    </div>
+                    <div id="zone-bench4" class="min-h-[150px] bg-slate-900/40 border-2 border-slate-800/60 rounded-xl p-2 flex flex-col" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="handleDrop(event, 'bench4')">
+                        <span class="text-[10px] text-slate-600 font-bold block mb-1">ベンチ 4</span>
+                    </div>
+                    <div id="zone-bench5" class="min-h-[150px] bg-slate-900/40 border-2 border-slate-800/60 rounded-xl p-2 flex flex-col" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="handleDrop(event, 'bench5')">
+                        <span class="text-[10px] text-slate-600 font-bold block mb-1">ベンチ 5</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 🤲 手札 -->
+            <div class="flex flex-col gap-2">
+                <h3 class="text-xs font-bold text-slate-400 flex items-center gap-1"><span class="text-sm">🤲</span> 手札</h3>
+                <div id="zone-hand" class="min-h-[140px] bg-amber-950/5 border-2 border-amber-900/15 rounded-xl p-4 flex flex-wrap gap-2 items-center" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="handleDrop(event, 'hand')">
+                    <!-- 手札カード -->
+                </div>
+            </div>
+        </section>
+
+        <!-- 右列: 山札・トラッシュ -->
+        <section class="xl:w-64 flex flex-col gap-4">
+            <!-- 📚 山札 -->
+            <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 flex flex-col gap-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-sm font-bold text-white flex items-center gap-1">📚 山札 (DECK)</h2>
+                    <span id="deckCount" class="bg-blue-500/10 text-blue-400 border border-blue-500/20 px-2 py-0.5 rounded text-xs font-bold">0</span>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="drawCard()" class="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2 rounded transition">1枚引く</button>
+                    <button onclick="shuffleDeck()" class="flex-1 border border-slate-700 hover:bg-slate-800 text-white text-xs font-bold py-2 rounded transition">シャッフル</button>
+                </div>
+                <!-- デッキカードビジュアル -->
+                <div class="flex justify-center py-4">
+                    <div onclick="drawCard()" class="w-24 h-34 bg-slate-800 border-4 border-slate-600 rounded-lg shadow-xl cursor-pointer hover:border-blue-500 transition flex flex-col items-center justify-center gap-2">
+                        <span class="text-2xl">⚡</span>
+                        <span class="text-[10px] text-slate-400 tracking-wider">POKEMON</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 💀 トラッシュ -->
+            <div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-4 flex-1 flex flex-col gap-3 min-h-[220px]">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-sm font-bold text-slate-400 flex items-center gap-1">💀 トラッシュ</h2>
+                    <span id="trashCount" class="bg-slate-800 text-slate-400 px-2 py-0.5 rounded text-xs font-bold">0</span>
+                </div>
+                <div id="zone-trash" class="flex-1 bg-slate-950/40 border border-dashed border-slate-800 rounded-lg p-2 flex flex-wrap gap-2 items-start content-start overflow-auto" ondragover="allowDrop(event)" ondragleave="dragLeave(event)" ondrop="handleDrop(event, 'trash')">
+                    <!-- トラッシュされたカード -->
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- コインフリップ / カードサーチ モーダル窓 -->
+    <div id="modalOverlay" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+        <!-- 内包コンテンツはJSで動的に書き換えます -->
+        <div id="modalContent" class="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-lg w-full m-4 shadow-2xl relative">
+        </div>
+    </div>
+
+    <!-- ダメージ計算＆電卓ダイアログ (ダブルタップ/ダブルクリックで出現) -->
+    <div id="damageCalculator" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-xl p-6 max-w-md w-full m-4 shadow-2xl">
+            <h3 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                <i class="fa-solid fa-calculator text-red-500"></i> わざダメージ計算式シミュレーター
+            </h3>
+            <p id="calcTargetName" class="text-xs text-slate-400 mb-4"></p>
+            
+            <div class="space-y-4 text-xs">
+                <!-- 攻撃側タイプ選択 -->
+                <div>
+                    <label class="block font-bold text-slate-300 mb-1.5">1. 攻撃ポケモンの属性を選択:</label>
+                    <div class="grid grid-cols-5 gap-1.5" id="calcElementGrid">
+                        <!-- 動的に追加 -->
+                    </div>
+                </div>
+
+                <!-- 基本ダメージ入力 -->
+                <div>
+                    <label class="block font-bold text-slate-300 mb-1.5" for="calcBaseDamageInput">2. 基本ダメージを入力 (dmg):</label>
+                    <input type="number" id="calcBaseDamageInput" class="w-full bg-slate-950 border border-slate-800 rounded px-3 py-2 text-white outline-none font-bold" value="30" oninput="runDamageCalculation()">
+                </div>
+
+                <!-- 計算式サマリー -->
+                <div class="bg-slate-950 p-3 rounded-lg border border-slate-800 space-y-1">
+                    <span class="text-[10px] text-slate-500 font-bold block mb-1">ダメージ計算の途中経過:</span>
+                    <div class="flex justify-between">
+                        <span>基本わざ威力:</span>
+                        <span id="calcBaseVal">30 dmg</span>
+                    </div>
+                    <div class="flex justify-between text-amber-500" id="calcWeaknessRow">
+                        <span>弱点補正 (2倍):</span>
+                        <span id="calcWeaknessVal">-</span>
+                    </div>
+                    <div class="flex justify-between text-blue-400" id="calcResistanceRow">
+                        <span>抵抗力補正 (-30):</span>
+                        <span id="calcResistanceVal">-</span>
+                    </div>
+                    <div class="border-t border-slate-800 my-2 pt-1 flex justify-between font-bold text-red-500 text-sm">
+                        <span>合計反映ダメージ:</span>
+                        <span id="calcTotalVal">30 dmg</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-5">
+                <button onclick="closeDamageCalculator()" class="border border-slate-700 hover:bg-slate-800 text-white text-xs font-bold px-4 py-2 rounded transition">キャンセル</button>
+                <button onclick="applyCalculatedDamage()" class="bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-4 py-2 rounded transition">反映する</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- コンテキストメニュー（右クリック） -->
+    <div id="customContextMenu" class="fixed bg-slate-900 border border-slate-800 rounded shadow-2xl py-1 w-48 text-xs font-bold text-slate-300 hidden z-50">
+        <button class="w-full text-left px-4 py-2 hover:bg-slate-800 hover:text-white flex items-center gap-2" onclick="handleMenuAction('hand')">
+            <i class="fa-solid fa-hand"></i>手札に戻す
+        </button>
+        <button class="w-full text-left px-4 py-2 hover:bg-slate-800 hover:text-white flex items-center gap-2" onclick="handleMenuAction('battleField')">
+            <i class="fa-solid fa-swords"></i>バトル場へ
+        </button>
+        <button class="w-full text-left px-4 py-2 hover:bg-slate-800 hover:text-white flex items-center gap-2" onclick="handleMenuAction('bench')">
+            <i class="fa-solid fa-chair"></i>空きベンチへ
+        </button>
+        <button class="w-full text-left px-4 py-2 hover:bg-slate-800 hover:text-white flex items-center gap-2" onclick="handleMenuAction('deck-top')">
+            <i class="fa-solid fa-arrow-up"></i>山札の上へ
+        </button>
+        <button class="w-full text-left px-4 py-2 hover:bg-slate-800 hover:text-white flex items-center gap-2" onclick="handleMenuAction('deck-bottom')">
+            <i class="fa-solid fa-arrow-down"></i>山札の下へ
+        </button>
+        <button class="w-full text-left px-4 py-2 hover:bg-slate-800 hover:text-white text-red-400 hover:text-red-300 flex items-center gap-2" onclick="handleMenuAction('trash')">
+            <i class="fa-solid fa-trash"></i>トラッシュへ
+        </button>
+        <div class="border-t border-slate-800 my-1"></div>
+        <button class="w-full text-left px-4 py-2 hover:bg-slate-800 hover:text-white flex items-center gap-2" onclick="handleMenuAction('toggle')">
+            <i class="fa-solid fa-arrows-rotate"></i>表裏を返す
+        </button>
+        <button id="menuDamageBtn" class="w-full text-left px-4 py-2 hover:bg-slate-800 hover:text-white flex items-center gap-2 text-amber-500" onclick="handleMenuAction('damage')">
+            <i class="fa-solid fa-heart-pulse"></i>ダメージ調整
+        </button>
+    </div>
+
+    <!-- トースト通知 -->
+    <div id="toastContainer" class="fixed bottom-6 right-6 flex flex-col gap-2 z-50"></div>
+
+    <script>
+        // === ビルトイン・ポケモンカードデータベース ===
+        // output.txt から抽出した成功例を元にした初期プリセット
+        const PRESET_CARDS = [
+            { cardId: "45222", name: "ダーテング", hp: 150, isBasic: false, type: "pke", element: "grass", weakness: "fire", resistance: "none" },
+            { cardId: "45224", name: "キノガッサ", hp: 120, isBasic: false, type: "pke", element: "grass", weakness: "fire", resistance: "none" },
+            { cardId: "45232", name: "ベラカス", hp: 70, isBasic: false, type: "pke", element: "grass", weakness: "fire", resistance: "none" },
+            { cardId: "45226", name: "メブキジカ", hp: 130, isBasic: false, type: "pke", element: "grass", weakness: "fire", resistance: "none" },
+            { cardId: "45230", name: "アノホラグサ", hp: 100, isBasic: false, type: "pke", element: "grass", weakness: "fire", resistance: "none" },
+            { cardId: "45235", name: "マグカルゴ", hp: 120, isBasic: false, type: "pke", element: "fire", weakness: "water", resistance: "none" },
+            { cardId: "45238", name: "ニャヒート", hp: 100, isBasic: false, type: "pke", element: "fire", weakness: "water", resistance: "none" },
+            { cardId: "45239", name: "ガオガエンex", hp: 320, isBasic: false, type: "pke", element: "fire", weakness: "water", resistance: "none" },
+            { cardId: "45241", name: "ライチュウ", hp: 130, isBasic: false, type: "pke", element: "lightning", weakness: "fighting", resistance: "none" },
+            { cardId: "45243", name: "エレキブル", hp: 140, isBasic: false, type: "pke", element: "lightning", weakness: "fighting", resistance: "none" },
+            { cardId: "45244", name: "デンヂムシ", hp: 100, isBasic: false, type: "pke", element: "lightning", weakness: "fighting", resistance: "none" },
+            { cardId: "45245", name: "クワガノン", hp: 160, isBasic: false, type: "pke", element: "lightning", weakness: "fighting", resistance: "none" },
+            { cardId: "45251", name: "アブリボン", hp: 70, isBasic: false, type: "pke", element: "psychic", weakness: "metal", resistance: "none" },
+            { cardId: "45255", name: "チャーレム", hp: 120, isBasic: false, type: "pke", element: "fighting", weakness: "psychic", resistance: "none" },
+            { cardId: "45257", name: "ドリュウズ", hp: 130, isBasic: false, type: "pke", element: "fighting", weakness: "grass", resistance: "none" },
+            { cardId: "45260", name: "フォレトス", hp: 130, isBasic: false, type: "pke", element: "metal", weakness: "fire", resistance: "grass" },
+            { cardId: "45261", name: "ハッサムex", hp: 270, isBasic: false, type: "pke", element: "metal", weakness: "fire", resistance: "grass" },
+            { cardId: "45264", name: "メタング", hp: 100, isBasic: false, type: "pke", element: "metal", weakness: "fire", resistance: "grass" },
+            { cardId: "45265", name: "メタグロス", hp: 180, isBasic: false, type: "pke", element: "metal", weakness: "fire", resistance: "grass" },
+            { cardId: "45267", name: "メルメタル", hp: 160, isBasic: false, type: "pke", element: "metal", weakness: "fire", resistance: "grass" },
+            { cardId: "45271", name: "ベロベルト", hp: 150, isBasic: false, type: "pke", element: "colorless", weakness: "fighting", resistance: "none" },
+            { cardId: "45273", name: "エネコロロ", hp: 110, isBasic: false, type: "pke", element: "colorless", weakness: "fighting", resistance: "none" },
+            { cardId: "45275", name: "ハトーボー", hp: 80, isBasic: false, type: "pke", element: "colorless", weakness: "lightning", resistance: "fighting" },
+            { cardId: "45276", name: "ケンホロウ", hp: 150, isBasic: false, type: "pke", element: "colorless", weakness: "lightning", resistance: "fighting" },
+            { cardId: "45290", name: "ギャロップ", hp: 110, isBasic: false, type: "pke", element: "fire", weakness: "water", resistance: "none" },
+            { cardId: "45297", name: "ルガルガン", hp: 120, isBasic: false, type: "pke", element: "fighting", weakness: "grass", resistance: "none" },
+            { cardId: "45302", name: "ピジョン", hp: 80, isBasic: false, type: "pke", element: "colorless", weakness: "lightning", resistance: "fighting" },
+            { cardId: "45303", name: "ピジョットex", hp: 280, isBasic: false, type: "pke", element: "colorless", weakness: "lightning", resistance: "fighting" },
+            { cardId: "45305", name: "ビーダル", hp: 120, isBasic: false, type: "pke", element: "colorless", weakness: "fighting", resistance: "none" },
+            
+            // たねポケモン（Basic）
+            { cardId: "45218", name: "タネボー", hp: 60, isBasic: true, type: "pke", element: "grass", weakness: "fire", resistance: "none" },
+            { cardId: "45219", name: "コノハナ", hp: 80, isBasic: true, type: "pke", element: "grass", weakness: "fire", resistance: "none" },
+            { cardId: "45220", name: "コダック", hp: 70, isBasic: true, type: "pke", element: "water", weakness: "lightning", resistance: "none" },
+            { cardId: "45225", name: "ヤブクロン", hp: 60, isBasic: true, type: "pke", element: "psychic", weakness: "fighting", resistance: "none" },
+            { cardId: "45234", name: "ニャビー", hp: 60, isBasic: true, type: "pke", element: "fire", weakness: "water", resistance: "none" },
+            { cardId: "45240", name: "ピカチュウ", hp: 70, isBasic: true, type: "pke", element: "lightning", weakness: "fighting", resistance: "none" },
+            { cardId: "45242", name: "ココドラ", hp: 70, isBasic: true, type: "pke", element: "metal", weakness: "fire", resistance: "grass" },
+            { cardId: "45246", name: "アゴジムシ", hp: 70, isBasic: true, type: "pke", element: "grass", weakness: "fire", resistance: "none" },
+            
+            // グッズ（gds）
+            { cardId: "45307", name: "エネルギーつけかえ", hp: 0, isBasic: true, type: "gds" },
+            { cardId: "45308", name: "エレキジェネレーター", hp: 0, isBasic: true, type: "gds" },
+            { cardId: "45309", name: "カウンターキャッチャー", hp: 0, isBasic: true, type: "gds" },
+            { cardId: "45311", name: "すごいつりざお", hp: 0, isBasic: true, type: "gds" },
+            { cardId: "45313", name: "大地の器", hp: 0, isBasic: true, type: "gds" },
+            { cardId: "45316", name: "ハイパーボール", hp: 0, isBasic: true, type: "gds" },
+            { cardId: "45319", name: "ポケモンいれかえ", hp: 0, isBasic: true, type: "gds" },
+            { cardId: "45320", name: "マスターボール", hp: 0, isBasic: true, type: "gds" },
+            { cardId: "45430", name: "きずぐすり", hp: 0, isBasic: true, type: "gds" },
+            { cardId: "45433", name: "ポケモンキャッチャー", hp: 0, isBasic: true, type: "gds" },
+            { cardId: "46282", name: "なかよしポフィン", hp: 0, isBasic: true, type: "gds" },
+            { cardId: "45279", name: "プライムキャッチャー", hp: 0, isBasic: true, type: "gds" },
+            
+            // サポート（sup）
+            { cardId: "45327", name: "カイ", hp: 0, isBasic: true, type: "sup" },
+            { cardId: "45330", name: "ナンジャモ", hp: 0, isBasic: true, type: "sup" },
+            { cardId: "45331", name: "ネモ", hp: 0, isBasic: true, type: "sup" },
+            { cardId: "45332", name: "博士の研究", hp: 0, isBasic: true, type: "sup" },
+            { cardId: "45334", name: "ボスの指令", hp: 0, isBasic: true, type: "sup" },
+            { cardId: "45333", name: "ペパー", hp: 0, isBasic: true, type: "sup" },
+
+            // スタジアム（sta）
+            { cardId: "46228", name: "パラダイスリゾート", hp: 0, isBasic: true, type: "sta" },
+            { cardId: "45335", name: "シンオウ神殿", hp: 0, isBasic: true, type: "sta" },
+            { cardId: "45338", name: "マグマの滝壺", hp: 0, isBasic: true, type: "sta" },
+
+            // エネルギー（ene）
+            { cardId: "45440", name: "基本草エネルギー", hp: 0, isBasic: true, type: "ene" },
+            { cardId: "45441", name: "基本炎エネルギー", hp: 0, isBasic: true, type: "ene" },
+            { cardId: "45489", name: "基本水エネルギー", hp: 0, isBasic: true, type: "ene" },
+            { cardId: "45464", name: "基本雷エネルギー", hp: 0, isBasic: true, type: "ene" },
+            { cardId: "45339", name: "ダブルターボエネルギー", hp: 0, isBasic: true, type: "ene" }
+        ];
+
+        // === ゲームステート管理 ===
+        let deck = [];
+        let hand = [];
+        let battleField = [];
+        let bench1 = [];
+        let bench2 = [];
+        let bench3 = [];
+        let bench4 = [];
+        let bench5 = [];
+        let stadium = [];
+        let side = [];
+        let trash = [];
+
+        let gameMode = "solo"; // "solo" または "online"
+        let isPlayLocked = true;
+        let activeTurnPlayer = "host"; // "host" または "guest"
+        let myRole = "host"; // 自分自身がホストかゲストか
+        let hasUsedSupporterInThisTurn = false;
+        let isRoomConnected = false;
+        let currentRoomId = null;
+
+        // ドラッグされているカード情報
+        let draggedCard = null;
+        let draggedFromZone = null;
+
+        // ダメージ計算用ターゲット
+        let calcTargetCard = null;
+
+        // コンテキストメニュー用
+        let contextSelectedCard = null;
+
+        // === 初期化と起動処理 ===
+        window.onload = function() {
+            // デフォルトデッキのロード
+            generateDefaultDeck();
+            setupInitialHand();
+            
+            // ドラッグ＆ドロップ監視を各エリアに割り当てる
+            initDropZones();
+
+            // グローバルクリックでコンテキストメニューを閉じる
+            document.addEventListener('click', function() {
+                document.getElementById('customContextMenu').classList.add('hidden');
+            });
+
+            // WebSocket/疑似同期メッセージを受け取る擬似ハンドラ
+            setupMockSynchronizer();
+        };
+
+        // デフォルトカード群から60枚のデッキを自動構築
+        function generateDefaultDeck() {
+            deck = [];
+            const tempPreset = [...PRESET_CARDS];
+            
+            // デッキの厚みを出すためランダムにコピーを作成
+            for (let i = 0; i < 60; i++) {
+                const preset = tempPreset[Math.floor(Math.random() * tempPreset.length)];
+                deck.push({
+                    uniqueId: `card_${Date.now()}_${Math.floor(Math.random() * 100000)}_${i}`,
+                    cardId: preset.cardId,
+                    name: preset.name,
+                    imageUrl: preset.imageUrl || `https://www.pokemon-card.com/assets/images/card/card_${preset.cardId}.png`,
+                    type: preset.type,
+                    isBasic: preset.isBasic,
+                    hp: preset.hp,
+                    damage: 0,
+                    element: preset.element || "colorless",
+                    weakness: preset.weakness || "none",
+                    resistance: preset.resistance || "none",
+                    isHidden: false,
+                    evolvesTo: preset.evolvesTo || [],
+                    evolvesFrom: preset.evolvesFrom || null
+                });
+            }
+        }
+
+        // === 手札初期化（マリガン対応自動巡回） ===
+        function setupInitialHand() {
+            let mulliganCount = 0;
+            let success = false;
+
+            while (mulliganCount < 10) {
+                // すべてのカードを一度リセットして山札に戻す
+                deck = [...deck, ...hand, ...side, ...battleField, ...bench1, ...bench2, ...bench3, ...bench4, ...bench5, ...stadium];
+                hand = [];
+                side = [];
+                battleField = [];
+                bench1 = [];
+                bench2 = [];
+                bench3 = [];
+                bench4 = [];
+                bench5 = [];
+                stadium = [];
+
+                // 山札のシャッフル
+                shuffleArray(deck);
+
+                // 7枚引く
+                const drawCount = Math.min(deck.length, 7);
+                for (let i = 0; i < drawCount; i++) {
+                    const card = deck.shift();
+                    card.isHidden = false;
+                    card.damage = 0;
+                    hand.push(card);
+                }
+
+                // 「たねポケモン」があるかチェック
+                if (hand.some(c => c.type === 'pke' && c.isBasic)) {
+                    success = true;
+                    break;
+                }
+                mulliganCount++;
+            }
+
+            // サイド6枚を裏向きで配置
+            const sideCount = Math.min(deck.length, 6);
+            for (let i = 0; i < sideCount; i++) {
+                const card = deck.shift();
+                card.isHidden = true;
+                side.push(card);
+            }
+
+            updateLockStatus();
+            renderAllZones();
+            pushMyStateToFirestore();
+
+            if (success && mulliganCount > 0) {
+                showToast(`たねポケモンがいなかったため、${mulliganCount}回自動で引き直しました。`);
+            } else if (!success) {
+                showToast("たねポケモンが見つからず、引き直し上限に達しました。", true);
+            } else {
+                showToast("準備完了！手札からバトル場に「たねポケモン」を置いてください。");
+            }
+        }
+
+        // 配列のランダムシャッフル
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+        }
+
+        // 一人回しモード/オンライン対戦モードの切り替え
+        function switchGameMode(mode) {
+            gameMode = mode;
+            const soloBtn = document.getElementById('modeSoloBtn');
+            const onlineBtn = document.getElementById('modeOnlineBtn');
+            const onlinePanel = document.getElementById('onlinePanel');
+            const opponentField = document.getElementById('opponentField');
+
+            if (mode === "solo") {
+                soloBtn.className = "px-3 py-1.5 rounded text-xs font-bold transition bg-blue-600 text-white";
+                onlineBtn.className = "px-3 py-1.5 rounded text-xs font-bold transition text-slate-400 hover:text-white";
+                onlinePanel.classList.add('hidden');
+                opponentField.classList.add('hidden');
+            } else {
+                soloBtn.className = "px-3 py-1.5 rounded text-xs font-bold transition text-slate-400 hover:text-white";
+                onlineBtn.className = "px-3 py-1.5 rounded text-xs font-bold transition bg-blue-600 text-white";
+                onlinePanel.classList.remove('hidden');
+                if (isRoomConnected) {
+                    opponentField.classList.remove('hidden');
+                }
+            }
+            updateTurnHeader();
+        }
+
+        // バトル場に「たねポケモン」がいるかどうかの確認とロック判定
+        function updateLockStatus() {
+            const hasBasic = battleField.some(c => c.type === 'pke' && c.isBasic);
+            isPlayLocked = !hasBasic;
+
+            const banner = document.getElementById('turnBanner');
+            if (isPlayLocked) {
+                banner.className = "bg-amber-500 text-slate-950 text-center py-2 text-xs font-bold flex items-center justify-center gap-2 shadow-inner";
+                banner.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><span>対戦を始める前に、必ず「たねポケモン」を手札からバトル場に配置してください！</span>`;
+            } else {
+                banner.className = "bg-green-600 text-white text-center py-2 text-xs font-bold flex items-center justify-center gap-2 shadow-inner";
+                banner.innerHTML = `<i class="fa-solid fa-circle-check"></i><span>準備完了！快適に一人回しやオンライン同期が可能です。</span>`;
+            }
+        }
+
+        // 1枚カードを山札から引く
+        function drawCard() {
+            if (!_isMyTurn()) {
+                showToast("相手のターンです！操作はロックされています。", true);
+                return;
+            }
+            if (isPlayLocked) {
+                showToast("先にバトル場に「たねポケモン」を出してください！", true);
+                return;
+            }
+            if (deck.length === 0) {
+                showToast("山札がもうありません！", true);
+                return;
+            }
+            const card = deck.shift();
+            card.isHidden = false;
+            hand.push(card);
+            renderAllZones();
+            pushMyStateToFirestore();
+        }
+
+        // 山札をシャッフル
+        function shuffleDeck() {
+            if (!_isMyTurn()) {
+                showToast("相手のターン中はシャッフルできません！", true);
+                return;
+            }
+            if (isPlayLocked) {
+                showToast("先にバトル場に「たねポケモン」を出してください！", true);
+                return;
+            }
+            shuffleArray(deck);
+            renderAllZones();
+            pushMyStateToFirestore();
+            showToast("山札をシャッフルしました。");
+        }
+
+        // 現在自分のターンか判定する
+        function _isMyTurn() {
+            if (gameMode === "solo") return true;
+            if (!isRoomConnected) return true;
+            return activeTurnPlayer === myRole;
+        }
+
+        // === ドラッグ＆ドロップ処理 ===
+        function initDropZones() {
+            const zones = ['side', 'battleField', 'stadium', 'bench1', 'bench2', 'bench3', 'bench4', 'bench5', 'hand', 'trash'];
+            zones.forEach(zoneId => {
+                const el = document.getElementById(`zone-${zoneId}`);
+                if (el) {
+                    el.addEventListener('dragover', (e) => allowDrop(e));
+                    el.addEventListener('dragleave', (e) => dragLeave(e));
+                    el.addEventListener('drop', (e) => handleDrop(e, zoneId));
+                }
+            });
+        }
+
+        function dragStart(e, cardJson, fromZone) {
+            if (!_isMyTurn()) {
+                e.preventDefault();
+                showToast("相手のターン中はカードを動かせません！", true);
+                return;
+            }
+            draggedCard = JSON.parse(decodeURIComponent(cardJson));
+            draggedFromZone = fromZone;
+            e.dataTransfer.effectAllowed = "move";
+        }
+
+        function allowDrop(e) {
+            e.preventDefault();
+            e.currentTarget.classList.add('drop-hover');
+        }
+
+        function dragLeave(e) {
+            e.currentTarget.classList.remove('drop-hover');
+        }
+
+        // ドラッグドロップ時のコア・移動検証ルールエンジン
+        function handleDrop(e, toZone) {
+            e.preventDefault();
+            e.currentTarget.classList.remove('drop-hover');
+            if (!draggedCard) return;
+
+            const fromZone = draggedFromZone;
+            if (fromZone === toZone) return;
+
+            // 移動検証開始
+            if (!_validateCardMove(draggedCard, toZone)) {
+                return;
+            }
+
+            // カード移動実行
+            const fromList = _getListForZone(fromZone);
+            const toList = _getListForZone(toZone);
+
+            // リストからの削除
+            const index = fromList.findIndex(c => c.uniqueId === draggedCard.uniqueId);
+            if (index !== -1) {
+                fromList.splice(index, 1);
+            }
+
+            // 状態アップデート
+            if (toZone === 'side') {
+                draggedCard.isHidden = true;
+            } else {
+                draggedCard.isHidden = false;
+            }
+
+            // サポートのターン1枚制限フラグを起動
+            if (fromZone === 'hand' && toZone !== 'hand' && draggedCard.type === 'sup') {
+                hasUsedSupporterInThisTurn = true;
+                showToast("サポートカードを使用しました。このターンはもう使用できません。");
+            }
+
+            // 特殊なスタジアムの張替え・即時トラッシュ処理
+            if (toZone === 'stadium' && stadium.length > 0) {
+                const oldStadium = stadium.shift();
+                trash.push(oldStadium);
+                showToast(`スタジアムが張り替えられました。前のスタジアムはトラッシュされました。`);
+            }
+
+            toList.push(draggedCard);
+
+            // ポケパッド、ポフィン、キャッチャー、きずぐすり効果自動発動！
+            if (fromZone === 'hand' && toZone !== 'hand') {
+                triggerCardAutoEffect(draggedCard);
+            }
+
+            updateLockStatus();
+            renderAllZones();
+            pushMyStateToFirestore();
+
+            draggedCard = null;
+            draggedFromZone = null;
+        }
+
+        // 移動制限判定
+        function _validateCardMove(card, toZone) {
+            const fromZone = getZoneOfCard(card);
+
+            // 1. サポートのターン中1枚制限
+            if (fromZone === 'hand' && toZone !== 'hand' && card.type === 'sup') {
+                if (hasUsedSupporterInThisTurn) {
+                    showToast("サポートカードは自分の番に1枚しか使用できません！", true);
+                    return false;
+                }
+            }
+
+            // 2. スタジアムにスタジアム以外は置けない
+            if (toZone === 'stadium') {
+                if (card.type !== 'sta') {
+                    showToast("スタジアムゾーンにはスタジアムカードしか置けません！", true);
+                    return false;
+                }
+                if (stadium.some(c => c.name === card.name)) {
+                    showToast("同名のスタジアムは場に出せません！", true);
+                    return false;
+                }
+            }
+
+            // 3. 空のバトル場・ベンチに「たね以外」は置けない
+            const isTargetZoneBench = toZone.startsWith('bench');
+            const targetList = _getListForZone(toZone);
+
+            if ((toZone === 'battleField' || isTargetZoneBench) && targetList.length === 0) {
+                if (card.type !== 'pke' || !card.isBasic) {
+                    showToast("空の枠に最初に配置できるのは「たねポケモン」のみです！", true);
+                    return false;
+                }
+            }
+
+            // 4. すでにポケモンが配置されている枠に、重ねる場合 (進化・エネルギー・どうぐ)
+            if ((toZone === 'battleField' || isTargetZoneBench) && targetList.length > 0) {
+                const isEnergy = card.type === 'ene';
+                const isTool = card.type === 'tool';
+                const isPokemon = card.type === 'pke';
+
+                if (isPokemon) {
+                    // 現在のスタックのトップにあるポケモンを検証
+                    const activePoke = targetList.filter(c => c.type === 'pke').pop();
+                    if (activePoke) {
+                        // 進化先、あるいは進化元かの判定
+                        const isCorrectEvolution = activePoke.evolvesTo.includes(card.name) || card.evolvesFrom === activePoke.name;
+                        if (!isCorrectEvolution && card.isBasic) {
+                            showToast("このポケモンは正しい進化先ではありません！", true);
+                            return false;
+                        }
+                    }
+                } else if (!isEnergy && !isTool) {
+                    showToast("この上に置けるのは進化ポケモン、エネルギー、どうぐのみです！", true);
+                    return false;
+                }
+            }
+
+            // 5. ゲームロック中（たねポケモン未配置）の制限
+            if (isPlayLocked && toZone !== 'battleField' && toZone !== 'hand') {
+                showToast("バトル場にたねポケモンを出すまでは他のゾーン操作は制限されています！", true);
+                return false;
+            }
+
+            return true;
+        }
+
+        // ゾーンの文字列から実データ配列を取得
+        function _getListForZone(zone) {
+            switch (zone) {
+                case 'deck': return deck;
+                case 'hand': return hand;
+                case 'battleField': return battleField;
+                case 'bench1': return bench1;
+                case 'bench2': return bench2;
+                case 'bench3': return bench3;
+                case 'bench4': return bench4;
+                case 'bench5': return bench5;
+                case 'stadium': return stadium;
+                case 'side': return side;
+                case 'trash': return trash;
+                default: return [];
+            }
+        }
+
+        // カードが現在どのゾーンにあるかを検索
+        function getZoneOfCard(card) {
+            const zones = ['deck', 'hand', 'battleField', 'bench1', 'bench2', 'bench3', 'bench4', 'bench5', 'stadium', 'side', 'trash'];
+            for (let zone of zones) {
+                const list = _getListForZone(zone);
+                if (list.some(c => c.uniqueId === card.uniqueId)) {
+                    return zone;
+                }
+            }
+            return 'deck';
+        }
+
+        // === 自動効果（なかよしポフィン、ハイパーボール、ポケモンキャッチャー、きずぐすりなど） ===
+        function triggerCardAutoEffect(card) {
+            if (card.name === 'なかよしポフィン') {
+                triggerBuddyPoffinEffect();
+            } else if (card.name === 'ハイパーボール') {
+                triggerHyperballEffect();
+            } else if (card.name === 'ポケモンキャッチャー') {
+                triggerPokemonCatcherEffect();
+            } else if (card.name === 'きずぐすり') {
+                triggerPotionEffect();
+            }
+        }
+
+        // 1. なかよしポフィン（山札からHP70以下のたねを最大2匹、ベンチに直接登場）
+        function triggerBuddyPoffinEffect() {
+            // 空きベンチの数と枠を特定
+            const emptyBenches = [];
+            for (let i = 1; i <= 5; i++) {
+                if (_getListForZone(`bench${i}`).length === 0) {
+                    emptyBenches.push(`bench${i}`);
+                }
+            }
+
+            if (emptyBenches.length === 0) {
+                showToast("ベンチに空きスロットがないため、なかよしポフィンのサーチは行われませんでした。");
+                return;
+            }
+
+            // HP70以下のたねポケモンを検索
+            const eligible = deck.filter(c => c.type === 'pke' && c.isBasic && c.hp <= 70);
+
+            if (eligible.length === 0) {
+                showToast("山札に対象のポケモン（HP70以下のたね）がいません。山札をシャッフルして終了します。");
+                shuffleDeck();
+                return;
+            }
+
+            const maxSelect = Math.min(2, emptyBenches.length);
+            let selectedList = [];
+
+            // モーダル表示
+            const overlay = document.getElementById('modalOverlay');
+            const content = document.getElementById('modalContent');
+            
+            let gridHtml = eligible.map(c => `
+                <div onclick="toggleModalCardSelect(this, '${c.uniqueId}')" class="border-2 border-transparent p-1.5 rounded cursor-pointer transition hover:border-blue-500 text-center bg-slate-950">
+                    <img src="${c.imageUrl}" class="w-16 h-22 mx-auto rounded" onerror="this.src='https://www.pokemon-card.com/assets/images/noimage/poke_ura.jpg'">
+                    <span class="text-[9px] text-slate-400 block mt-1 truncate">${c.name} (HP${c.hp})</span>
+                </div>
+            `).join('');
+
+            content.innerHTML = `
+                <h3 class="text-sm font-bold text-white mb-4">🍩 なかよしポフィン: HP70以下のたねを最大${maxSelect}匹、ベンチに出します</h3>
+                <div class="grid grid-cols-4 gap-2 max-h-60 overflow-y-auto mb-4 bg-slate-950 p-2 rounded">
+                    ${gridHtml}
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button onclick="closeModal()" class="border border-slate-700 hover:bg-slate-800 px-4 py-2 rounded text-xs font-bold text-white">対象なし</button>
+                    <button onclick="confirmPoffinSelection('${JSON.stringify(emptyBenches)}')" class="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded text-xs font-bold text-white">ベンチに出す</button>
+                </div>
+            `;
+            overlay.classList.remove('hidden');
+        }
+
+        let selectedModalCardIds = [];
+        function toggleModalCardSelect(el, uniqueId) {
+            const idx = selectedModalCardIds.indexOf(uniqueId);
+            if (idx !== -1) {
+                selectedModalCardIds.splice(idx, 1);
+                el.classList.remove('border-green-500', 'bg-green-950/20');
+            } else {
+                selectedModalCardIds.push(uniqueId);
+                el.classList.add('border-green-500', 'bg-green-950/20');
+            }
+        }
+
+        function confirmPoffinSelection(emptyBenchesJson) {
+            const emptyBenches = JSON.parse(emptyBenchesJson);
+            if (selectedModalCardIds.length === 0) {
+                closeModal();
+                return;
+            }
+
+            const limit = Math.min(selectedModalCardIds.length, emptyBenches.length, 2);
+            for (let i = 0; i < limit; i++) {
+                const uid = selectedModalCardIds[i];
+                const cardIndex = deck.findIndex(c => c.uniqueId === uid);
+                if (cardIndex !== -1) {
+                    const card = deck.splice(cardIndex, 1)[0];
+                    card.isHidden = false;
+                    _getListForZone(emptyBenches[i]).push(card);
+                }
+            }
+
+            shuffleArray(deck);
+            closeModal();
+            renderAllZones();
+            pushMyStateToFirestore();
+            showToast("対象のポケモンをベンチに登場させ、山札をシャッフルしました！");
+        }
+
+        // 2. ハイパーボール（手札2枚トラッシュ ＆ 山札から好きな「ポケモン（pke）」を1枚サーチし相手に公開）
+        function triggerHyperballEffect() {
+            if (hand.length < 2) {
+                showToast("手札が不足しているため、ハイパーボールのトラッシュ効果のみ発動します（不発）。");
+                return;
+            }
+
+            const overlay = document.getElementById('modalOverlay');
+            const content = document.getElementById('modalContent');
+
+            selectedModalCardIds = [];
+            let gridHtml = hand.map(c => `
+                <div onclick="toggleModalCardSelect(this, '${c.uniqueId}')" class="border-2 border-transparent p-1.5 rounded cursor-pointer transition hover:border-red-500 text-center bg-slate-950">
+                    <img src="${c.imageUrl}" class="w-16 h-22 mx-auto rounded" onerror="this.src='https://www.pokemon-card.com/assets/images/noimage/poke_ura.jpg'">
+                    <span class="text-[9px] text-slate-400 block mt-1 truncate">${c.name}</span>
+                </div>
+            `).join('');
+
+            content.innerHTML = `
+                <h3 class="text-sm font-bold text-white mb-4">🗑️ ハイパーボール: トラッシュする手札を2枚選んでください</h3>
+                <div class="grid grid-cols-4 gap-2 max-h-60 overflow-y-auto mb-4 bg-slate-950 p-2 rounded">
+                    ${gridHtml}
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button onclick="closeModal()" class="border border-slate-700 hover:bg-slate-800 px-4 py-2 rounded text-xs font-bold text-white">対象なし・キャンセル</button>
+                    <button onclick="confirmHyperballTrash()" class="bg-red-600 hover:bg-red-500 px-4 py-2 rounded text-xs font-bold text-white">トラッシュして山札サーチ</button>
+                </div>
+            `;
+            overlay.classList.remove('hidden');
+        }
+
+        function confirmHyperballTrash() {
+            if (selectedModalCardIds.length !== 2) {
+                showToast("必ず手札から2枚選択してください！", true);
+                return;
+            }
+
+            // 手札から実際に削除
+            selectedModalCardIds.forEach(uid => {
+                const idx = hand.findIndex(c => c.uniqueId === uid);
+                if (idx !== -1) {
+                    const card = hand.splice(idx, 1)[0];
+                    card.damage = 0;
+                    trash.push(card);
+                }
+            });
+
+            closeModal();
+            renderAllZones();
+
+            // 山札から「ポケモン(pke)」のみをフィルタリング表示
+            const eligiblePokes = deck.filter(c => c.type === 'pke');
+            if (eligiblePokes.length === 0) {
+                showToast("山札に対象の「ポケモン」がいませんでした。山札をシャッフルします。");
+                shuffleArray(deck);
+                pushMyStateToFirestore();
+                return;
+            }
+
+            setTimeout(() => {
+                const overlay = document.getElementById('modalOverlay');
+                const content = document.getElementById('modalContent');
+
+                let gridHtml = eligiblePokes.map(c => `
+                    <div onclick="selectHyperballSearchPoke('${c.uniqueId}')" class="p-1.5 rounded cursor-pointer transition hover:bg-blue-950 text-center bg-slate-950">
+                        <img src="${c.imageUrl}" class="w-16 h-22 mx-auto rounded" onerror="this.src='https://www.pokemon-card.com/assets/images/noimage/poke_ura.jpg'">
+                        <span class="text-[9px] text-slate-400 block mt-1 truncate">${c.name}</span>
+                    </div>
+                `).join('');
+
+                content.innerHTML = `
+                    <h3 class="text-sm font-bold text-white mb-4">🔍 ハイパーボール: 好きなポケモンを1枚選んで手札に加えます (公開されます)</h3>
+                    <div class="grid grid-cols-4 gap-2 max-h-60 overflow-y-auto mb-4 bg-slate-950 p-2 rounded">
+                        ${gridHtml}
+                    </div>
+                    <div class="flex justify-end">
+                        <button onclick="closeModal(); shuffleDeck();" class="border border-slate-700 hover:bg-slate-800 px-4 py-2 rounded text-xs font-bold text-white">対象なし</button>
+                    </div>
+                `;
+                overlay.classList.remove('hidden');
+            }, 300);
+        }
+
+        function selectHyperballSearchPoke(uid) {
+            const idx = deck.findIndex(c => c.uniqueId === uid);
+            if (idx !== -1) {
+                const card = deck.splice(idx, 1)[0];
+                card.isHidden = false;
+                hand.push(card);
+                shuffleArray(deck);
+
+                // オンライン対戦時は相手のステート公開用キーにこのカード名をプッシュ
+                pushMyStateToFirestore(card.name);
+                showToast(`山札から「${card.name}」を相手に公開して手札に加えました！`);
+            }
+            closeModal();
+            renderAllZones();
+        }
+
+        // 3. ポケモンキャッチャー（コイン演出 ＆ 相手のベンチとバトル場を入れ替え）
+        function triggerPokemonCatcherEffect() {
+            // 現在カードが存在するベンチスロットを判定
+            const activeBenches = [];
+            for (let i = 1; i <= 5; i++) {
+                const bZone = _getListForZone(`bench${i}`);
+                if (bZone.length > 0) {
+                    const activePoke = bZone.filter(c => c.type === 'pke').pop() || bZone[bZone.length - 1];
+                    activeBenches.push({
+                        zone: `bench${i}`,
+                        index: i,
+                        pokemonName: activePoke.name,
+                        imageUrl: activePoke.imageUrl
+                    });
+                }
+            }
+
+            if (activeBenches.length === 0) {
+                showToast("入れ替え対象のベンチポケモンがいません！", true);
+                return;
+            }
+
+            const overlay = document.getElementById('modalOverlay');
+            const content = document.getElementById('modalContent');
+
+            // 1.2秒のコインフリップスピン演出を開始
+            content.innerHTML = `
+                <div class="text-center py-6">
+                    <h3 class="text-sm font-bold text-slate-400 mb-6">🪙 ポケモンキャッチャー: コインを投げています...</h3>
+                    <div class="inline-block w-20 h-20 bg-gradient-to-tr from-amber-500 to-yellow-300 rounded-full border-4 border-white shadow-2xl flex items-center justify-center text-slate-900 font-extrabold text-xl coin-spin">
+                        ⚡
+                    </div>
+                </div>
+            `;
+            overlay.classList.remove('hidden');
+
+            setTimeout(() => {
+                const isHeads = Math.random() < 0.5;
+                if (!isHeads) {
+                    content.innerHTML = `
+                        <div class="text-center py-6 space-y-4">
+                            <h3 class="text-sm font-bold text-slate-400">🪙 コインフリップ結果</h3>
+                            <div class="inline-block w-20 h-20 bg-slate-600 rounded-full border-4 border-white shadow-2xl flex items-center justify-center text-white font-extrabold text-xl">
+                                ウラ
+                            </div>
+                            <p class="text-xs text-red-400 font-bold">残念、ウラでした！効果は発揮されず終了します。</p>
+                            <button onclick="closeModal()" class="bg-slate-700 hover:bg-slate-600 px-6 py-2 rounded text-xs font-bold text-white">閉じる</button>
+                        </div>
+                    `;
+                } else {
+                    // 表の場合はベンチスロット選択画面へ
+                    let gridHtml = activeBenches.map(b => `
+                        <div onclick="selectPokemonCatcherTarget('${b.zone}', '${b.pokemonName}', ${b.index})" class="p-2 border border-slate-800 rounded hover:border-blue-500 cursor-pointer transition text-center bg-slate-950">
+                            <img src="${b.imageUrl}" class="w-16 h-22 mx-auto rounded" onerror="this.src='https://www.pokemon-card.com/assets/images/noimage/poke_ura.jpg'">
+                            <span class="text-[10px] text-white font-bold block mt-2">ベンチ ${b.index}</span>
+                            <span class="text-[9px] text-slate-400 block truncate">${b.pokemonName}</span>
+                        </div>
+                    `).join('');
+
+                    content.innerHTML = `
+                        <div class="space-y-4">
+                            <div class="text-center">
+                                <h3 class="text-sm font-bold text-slate-400 mb-2">🪙 コインフリップ結果</h3>
+                                <div class="inline-block w-16 h-16 bg-amber-500 rounded-full border-4 border-white shadow-2xl flex items-center justify-center text-slate-950 font-extrabold text-sm">
+                                    オモテ
+                                </div>
+                            </div>
+                            <p class="text-xs font-bold text-green-400 text-center">オモテ！呼び出したいベンチのポケモンを1匹選んでください：</p>
+                            <div class="grid grid-cols-3 gap-2">
+                                ${gridHtml}
+                            </div>
+                            <div class="flex justify-end">
+                                <button onclick="closeModal()" class="border border-slate-700 hover:bg-slate-800 px-4 py-2 rounded text-xs font-bold text-white">キャンセル</button>
+                            </div>
+                        </div>
+                    `;
+                }
+            }, 1200);
+        }
+
+        function selectPokemonCatcherTarget(benchZone, pokemonName, benchIndex) {
+            // スワップ
+            const battleList = _getListForZone('battleField');
+            const benchList = _getListForZone(benchZone);
+
+            const tempBattle = [...battleList];
+            battleList.length = 0;
+            battleList.push(...benchList);
+            benchList.length = 0;
+            benchList.push(...tempBattle);
+
+            updateLockStatus();
+            closeModal();
+            renderAllZones();
+            pushMyStateToFirestore();
+            showToast(`バトル場のポケモンと、ベンチ${benchIndex}の「${pokemonName}」が入れ替わりました！`);
+        }
+
+        // 4. きずぐすり（自分のポケモンを1匹選び、HPを30回復）
+        function triggerPotionEffect() {
+            const damageablePokemons = [];
+            
+            // バトル場
+            if (battleField.length > 0) {
+                const p = battleField.filter(c => c.type === 'pke').pop() || battleField[battleField.length - 1];
+                if (p.type === 'pke') {
+                    damageablePokemons.add ? damageablePokemons.add() : damageablePokemons.push({ card: p, zoneName: "バトル場", zone: "battleField" });
+                }
+            }
+
+            // ベンチ
+            for (let i = 1; i <= 5; i++) {
+                const bList = _getListForZone(`bench${i}`);
+                if (bList.length > 0) {
+                    const p = bList.filter(c => c.type === 'pke').pop() || bList[bList.length - 1];
+                    if (p.type === 'pke') {
+                        damageablePokemons.push({ card: p, zoneName: `ベンチ 枠${i}`, zone: `bench${i}` });
+                    }
+                }
+            }
+
+            if (damageablePokemons.length === 0) {
+                showToast("場にポケモンが存在しないため、きずぐすりは回復を行わずトラッシュされます。");
+                return;
+            }
+
+            const overlay = document.getElementById('modalOverlay');
+            const content = document.getElementById('modalContent');
+
+            let gridHtml = damageablePokemons.map(item => `
+                <div onclick="selectPotionHealTarget('${item.card.uniqueId}', '${item.card.name}')" class="p-2 border border-slate-800 rounded hover:border-green-500 cursor-pointer transition text-center bg-slate-950">
+                    <img src="${item.card.imageUrl}" class="w-16 h-22 mx-auto rounded" onerror="this.src='https://www.pokemon-card.com/assets/images/noimage/poke_ura.jpg'">
+                    <span class="text-[10px] text-white font-bold block mt-2">${item.zoneName}</span>
+                    <span class="text-[9px] text-slate-400 block truncate">${item.card.name}</span>
+                    <span class="text-[10px] text-red-500 block font-bold mt-1">蓄積: ${item.card.damage}dmg</span>
+                </div>
+            `).join('');
+
+            content.innerHTML = `
+                <h3 class="text-sm font-bold text-white mb-4">💚 きずぐすり: HPを30回復（ダメカンを3個取り除く）するポケモンを選んでください</h3>
+                <div class="grid grid-cols-3 gap-2">
+                    ${gridHtml}
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button onclick="closeModal()" class="border border-slate-700 hover:bg-slate-800 px-4 py-2 rounded text-xs font-bold text-white">キャンセル</button>
+                </div>
+            `;
+            overlay.classList.remove('hidden');
+        }
+
+        function selectPotionHealTarget(uniqueId, cardName) {
+            // 場にあるカードから検索
+            const zones = ['battleField', 'bench1', 'bench2', 'bench3', 'bench4', 'bench5'];
+            let found = false;
+
+            for (let zone of zones) {
+                const list = _getListForZone(zone);
+                const card = list.find(c => c.uniqueId === uniqueId);
+                if (card) {
+                    card.damage = Math.max(0, card.damage - 30);
+                    found = true;
+                    break;
+                }
+            }
+
+            closeModal();
+            renderAllZones();
+            pushMyStateToFirestore();
+            if (found) {
+                showToast(`「${cardName}」のHPを30回復しました。`);
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('modalOverlay').classList.add('hidden');
+        }
+
+        // === 弱点・抵抗力計算式わざダメージ計算電卓 ===
+        function openDamageCalculator(cardJson) {
+            const card = JSON.parse(decodeURIComponent(cardJson));
+            if (card.type !== 'pke') return;
+
+            calcTargetCard = card;
+            document.getElementById('calcTargetName').textContent = `対象の防御ポケモン: ${card.name} (属性: ${card.element.toUpperCase()})`;
+            
+            // 攻撃属性グリッドの生成
+            const grid = document.getElementById('calcElementGrid');
+            const elements = ['grass', 'fire', 'water', 'lightning', 'psychic', 'fighting', 'dark', 'metal', 'colorless'];
+            grid.innerHTML = elements.map(elem => `
+                <button onclick="selectCalcAttackElement('${elem}')" id="calc-elem-${elem}" class="bg-slate-950 hover:bg-slate-800 border border-slate-800 px-2 py-2 rounded text-[9px] font-bold text-center tracking-tighter hover:text-white transition">
+                    ${elem.toUpperCase()}
+                </button>
+            `).join('');
+
+            // 初期選択
+            selectCalcAttackElement('colorless');
+            document.getElementById('damageCalculator').classList.remove('hidden');
+        }
+
+        let currentCalcAttackElement = 'colorless';
+        function selectCalcAttackElement(elem) {
+            // 前回のアクティブをクリア
+            const btns = document.querySelectorAll('[id^="calc-elem-"]');
+            btns.forEach(b => b.className = "bg-slate-950 hover:bg-slate-800 border border-slate-800 px-2 py-2 rounded text-[9px] font-bold text-center tracking-tighter text-slate-400 hover:text-white transition");
+
+            currentCalcAttackElement = elem;
+            const activeBtn = document.getElementById(`calc-elem-${elem}`);
+            if (activeBtn) {
+                activeBtn.className = "bg-blue-600 border border-blue-500 px-2 py-2 rounded text-[9px] font-bold text-center tracking-tighter text-white transition";
+            }
+            runDamageCalculation();
+        }
+
+        // 弱点(2倍)・抵抗力(-30)の計算実行
+        function runDamageCalculation() {
+            if (!calcTargetCard) return;
+            const baseInput = document.getElementById('calcBaseDamageInput');
+            const baseDmg = parseInt(baseInput.value) || 0;
+            let finalDmg = baseDmg;
+
+            const targetWeakness = calcTargetCard.weakness;
+            const targetResistance = calcTargetCard.resistance;
+
+            const weaknessRow = document.getElementById('calcWeaknessRow');
+            const resistanceRow = document.getElementById('calcResistanceRow');
+
+            // 弱点判定
+            if (targetWeakness !== 'none' && targetWeakness === currentCalcAttackElement) {
+                finalDmg = finalDmg * 2;
+                document.getElementById('calcWeaknessVal').textContent = "適用 (×2ダメージ)";
+                weaknessRow.style.display = "flex";
+            } else {
+                weaknessRow.style.display = "none";
+            }
+
+            // 抵抗力判定
+            if (targetResistance !== 'none' && targetResistance === currentCalcAttackElement) {
+                finalDmg = Math.max(0, finalDmg - 30);
+                document.getElementById('calcResistanceVal').textContent = "適用 (-30dmg)";
+                resistanceRow.style.display = "flex";
+            } else {
+                resistanceRow.style.display = "none";
+            }
+
+            document.getElementById('calcBaseVal').textContent = `${baseDmg} dmg`;
+            document.getElementById('calcTotalVal').textContent = `${finalDmg} dmg`;
+        }
+
+        function closeDamageCalculator() {
+            document.getElementById('damageCalculator').classList.add('hidden');
+            calcTargetCard = null;
+        }
+
+        // ダメージ計算結果の実際のカードへの反映
+        function applyCalculatedDamage() {
+            if (!calcTargetCard) return;
+            const totalText = document.getElementById('calcTotalVal').textContent;
+            const finalDmg = parseInt(totalText) || 0;
+
+            // 盤面のカードを探してダメージを更新
+            const zones = ['battleField', 'bench1', 'bench2', 'bench3', 'bench4', 'bench5'];
+            let updated = false;
+
+            for (let zone of zones) {
+                const list = _getListForZone(zone);
+                const card = list.find(c => c.uniqueId === calcTargetCard.uniqueId);
+                if (card) {
+                    card.damage += finalDmg;
+                    updated = true;
+                    break;
+                }
+            }
+
+            closeDamageCalculator();
+            renderAllZones();
+            pushMyStateToFirestore();
+            if (updated) {
+                showToast("弱点・抵抗力補正を計算したわざダメージを反映しました！");
+            }
+        }
+
+        // === 手動デッキインポート機能 ===
+        function loadDeckFromId() {
+            const idInput = document.getElementById('deckIdInput').value.trim();
+            if (!idInput) {
+                showToast("デッキIDを入力してください", true);
+                return;
+            }
+            // 擬似的にインポート中のロード感を演出
+            _isLoading = true;
+            document.querySelector('button[onclick="loadDeckFromId()"]').textContent = "精査中...";
+            
+            setTimeout(() => {
+                generateDefaultDeck();
+                setupInitialHand();
+                _isLoading = false;
+                document.querySelector('button[onclick="loadDeckFromId()"]').textContent = "デッキ読込";
+                showToast(`デッキ「${idInput}」をロードしました (60枚)`);
+            }, 1000);
+        }
+
+        // === 画面描画（レンダリングエンジン） ===
+        function renderAllZones() {
+            renderZone('hand', hand);
+            renderZone('battleField', battleField);
+            renderZone('stadium', stadium);
+            renderZone('side', side);
+            renderZone('trash', trash);
+
+            // 5つのベンチ枠を描画
+            for (let i = 1; i <= 5; i++) {
+                renderZone(`bench${i}`, _getListForZone(`bench${i}`));
+            }
+
+            // カード数バッジの更新
+            document.getElementById('deckCount').textContent = deck.length;
+            document.getElementById('sideCount').textContent = side.length;
+            document.getElementById('trashCount').textContent = trash.length;
+        }
+
+        function renderZone(zoneId, cardsList) {
+            const container = document.getElementById(`zone-${zoneId}`);
+            if (!container) return;
+
+            // 空表示の管理
+            if (cardsList.length === 0) {
+                if (zoneId === 'battleField') {
+                    container.innerHTML = `<span class="text-xs text-slate-600 m-auto">ここに「たねポケモン」を置いてスタート！</span>`;
+                } else if (zoneId === 'stadium') {
+                    container.innerHTML = `<span class="text-xs text-slate-600">スタジアム未配置</span>`;
+                } else if (zoneId.startsWith('bench')) {
+                    const num = zoneId.replace('bench', '');
+                    container.innerHTML = `<span class="text-[10px] text-slate-600 font-bold block mb-1">ベンチ ${num}</span>`;
+                } else {
+                    container.innerHTML = '';
+                }
+                return;
+            }
+
+            // カード群が1枚以上配置されている場合、新エネルギーずらし配置ルールに沿ってレンダリング
+            container.innerHTML = '';
+
+            // ベンチ名ヘッダを維持
+            if (zoneId.startsWith('bench')) {
+                const num = zoneId.replace('bench', '');
+                const header = document.createElement('span');
+                header.className = "text-[10px] text-slate-600 font-bold block mb-1";
+                header.textContent = `ベンチ ${num}`;
+                container.appendChild(header);
+            }
+
+            // カードを「エネルギー（ene）」と「ポケモンやどうぐ」に分離する
+            const pokemonAndTools = cardsList.filter(c => c.type !== 'ene');
+            const energies = cardsList.filter(c => c.type === 'ene');
+
+            const wrapper = document.createElement('div');
+            wrapper.className = "flex w-full items-start gap-2 relative h-full";
+
+            // 左側: ポケモン＆ポケモンのどうぐ（縦に22pxずつずらして重ねます）
+            if (pokemonAndTools.length > 0) {
+                const leftSub = document.createElement('div');
+                leftSub.className = "relative w-20";
+                // 縦積みの高さ確保
+                leftSub.style.height = `${112 + (pokemonAndTools.length - 1) * 22}px`;
+
+                pokemonAndTools.forEach((card, idx) => {
+                    const cardEl = createCardElement(card, zoneId);
+                    cardEl.style.position = "absolute";
+                    cardEl.style.top = `${idx * 22}px`;
+                    cardEl.style.left = "0";
+                    leftSub.appendChild(cardEl);
+                });
+                wrapper.appendChild(leftSub);
+            }
+
+            // 右側: エネルギー配置エリア（同じエネルギーは縦に15pxずつ、別エネルギーは横に並びます）
+            if (energies.length > 0) {
+                const rightSub = document.createElement('div');
+                rightSub.className = "flex-1 flex gap-2 overflow-x-auto h-full";
+
+                // エネルギーを名前（タイプ）ごとにグループ化
+                const grouped = {};
+                energies.forEach(ene => {
+                    if (!grouped[ene.name]) grouped[ene.name] = [];
+                    grouped[ene.name].push(ene);
+                });
+
+                Object.keys(grouped).forEach(eneName => {
+                    const groupList = grouped[eneName];
+                    const groupContainer = document.createElement('div');
+                    groupContainer.className = "relative w-20";
+                    groupContainer.style.height = `${112 + (groupList.length - 1) * 15}px`;
+
+                    groupList.forEach((card, idx) => {
+                        const cardEl = createCardElement(card, zoneId);
+                        cardEl.style.position = "absolute";
+                        cardEl.style.top = `${idx * 15}px`;
+                        cardEl.style.left = "0";
+                        groupContainer.appendChild(cardEl);
+                    });
+                    rightSub.appendChild(groupContainer);
+                });
+
+                wrapper.appendChild(rightSub);
+            }
+
+            container.appendChild(wrapper);
+        }
+
+        // 個々のカードHTMLオブジェクトを構築するビルダー
+        function createCardElement(card, zoneId) {
+            const div = document.createElement('div');
+            div.className = "w-20 h-28 card-item rounded-lg bg-slate-900 border border-slate-700/80 shadow-md relative overflow-hidden flex-shrink-0 cursor-grab active:cursor-grabbing";
+            div.draggable = _isMyTurn();
+            
+            // ドラッグ開始
+            const encodedCard = encodeURIComponent(JSON.stringify(card));
+            div.addEventListener('dragstart', (e) => dragStart(e, encodedCard, zoneId));
+
+            // 右クリックメニュー対応
+            div.addEventListener('contextmenu', (e) => {
+                e.preventDefault();
+                showCustomContextMenu(e, card);
+            });
+
+            // ダブルタップ（ダブルクリック）でダメージ計算電卓を起動
+            div.addEventListener('dblclick', (e) => {
+                e.stopPropagation();
+                if (card.type === 'pke') {
+                    openDamageCalculator(encodedCard);
+                }
+            });
+
+            // 裏表の画像出し分け
+            const imgUrl = card.isHidden 
+                ? 'https://www.pokemon-card.com/assets/images/noimage/poke_ura.jpg'
+                : card.imageUrl;
+
+            // パラダイスリゾート下の「コダック」バフエフェクト判定
+            const showKoduckBuff = card.type === 'pke' && card.name.contains && card.name.contains("コダック") && _isParadiseResortActive && !card.isHidden;
+            if (showKoduckBuff) {
+                div.classList.add('koduck-buff');
+            }
+
+            // カードの残りの割合計算
+            const hasDamage = card.type === 'pke' && card.damage > 0 && !card.isHidden;
+            const remainingHp = Math.max(0, card.hp - card.damage);
+            const hpRatio = card.hp > 0 ? remainingHp / card.hp : 1.0;
+
+            div.innerHTML = `
+                <img src="${imgUrl}" class="w-full h-full object-cover pointer-events-none" onerror="this.src='https://www.pokemon-card.com/assets/images/noimage/poke_ura.jpg'">
+                ${!card.isHidden ? `
+                    <div class="absolute bottom-0 inset-x-0 bg-black/85 p-1 flex flex-col justify-end pointer-events-none">
+                        <!-- コダック支援情報 -->
+                        ${showKoduckBuff ? `
+                            <div class="bg-amber-500 text-[6px] text-slate-950 font-black text-center py-0.5 rounded mb-0.5 scale-90">にげる-1</div>
+                        ` : ''}
+
+                        <!-- 体力バーと蓄積ダメージ -->
+                        ${hasDamage ? `
+                            <div class="w-full h-1 bg-slate-800 rounded mb-0.5 overflow-hidden">
+                                <div class="h-full bg-red-500" style="width: ${hpRatio * 100}%"></div>
+                            </div>
+                            <span class="text-[7px] text-red-400 font-extrabold text-center block leading-none scale-90">-${card.damage}dmg (残${remainingHp})</span>
+                        ` : ''}
+
+                        <!-- カード名 -->
+                        <span class="text-[8px] font-bold text-slate-200 truncate block text-center mt-0.5 leading-none">${card.name}</span>
+                    </div>
+                ` : ''}
+            `;
+
+            return div;
+        }
+
+        // === カスタムコンテキストメニュー制御 ===
+        function showCustomContextMenu(e, card) {
+            contextSelectedCard = card;
+            const menu = document.getElementById('customContextMenu');
+            menu.style.left = `${e.clientX}px`;
+            menu.style.top = `${e.clientY}px`;
+            
+            // ダメージ調整ボタンの制御
+            const damageBtn = document.getElementById('menuDamageBtn');
+            if (card.type === 'pke') {
+                damageBtn.classList.remove('hidden');
+            } else {
+                damageBtn.classList.add('hidden');
+            }
+
+            menu.classList.remove('hidden');
+        }
+
+        function handleMenuAction(action) {
+            if (!contextSelectedCard) return;
+
+            const card = contextSelectedCard;
+            const fromZone = getZoneOfCard(card);
+
+            if (action === 'toggle') {
+                card.isHidden = !card.isHidden;
+                renderAllZones();
+                pushMyStateToFirestore();
+            } else if (action === 'damage') {
+                _showDamageEditDialog(card);
+            } else if (action === 'bench') {
+                const targetBench = _getFirstEmptyBenchZone();
+                if (!targetBench) {
+                    showToast("ベンチ枠に空きがありません！", true);
+                    return;
+                }
+                moveCardDirectly(card, fromZone, targetBench);
+            } else if (action === 'deck-top' || action === 'deck-bottom') {
+                // 山札操作
+                const fromList = _getListForZone(fromZone);
+                const idx = fromList.findIndex(c => c.uniqueId === card.uniqueId);
+                if (idx !== -1) {
+                    fromList.splice(idx, 1);
+                    card.isHidden = true;
+                    if (action === 'deck-top') {
+                        deck.unshift(card); // 先頭（山札の上）
+                    } else {
+                        deck.push(card); // 末尾（山札の下）
+                    }
+                    updateLockStatus();
+                    renderAllZones();
+                    pushMyStateToFirestore();
+                    showToast(`「${card.name}」を山札の${action === 'deck-top' ? '一番上' : '一番下'}に移動しました。`);
+                }
+            } else {
+                // 通常のゾーン移動
+                moveCardDirectly(card, fromZone, action);
+            }
+
+            contextSelectedCard = null;
+            document.getElementById('customContextMenu').classList.add('hidden');
+        }
+
+        // メニュー等から直接スワップさせるための移動エンジン
+        function moveCardDirectly(card, fromZone, toZone) {
+            if (!_validateCardMove(card, toZone)) return;
+
+            const fromList = _getListForZone(fromZone);
+            const toList = _getListForZone(toZone);
+
+            const index = fromList.findIndex(c => c.uniqueId === card.uniqueId);
+            if (index !== -1) {
+                fromList.splice(index, 1);
+            }
+
+            card.isHidden = (toZone === 'side');
+            toList.push(card);
+
+            if (fromZone === 'hand' && toZone !== 'hand' && card.type === 'sup') {
+                hasUsedSupporterInThisTurn = true;
+            }
+
+            // スタジアムの自動トラッシュ
+            if (toZone === 'stadium' && stadium.length > 1) {
+                const old = stadium.shift();
+                trash.push(old);
+            }
+
+            updateLockStatus();
+            renderAllZones();
+            pushMyStateToFirestore();
+        }
+
+        // === オンライン対戦 疑似マルチプレイヤー＆通信同期（Firestore模倣設計） ===
+        // Canvas上の環境に応じてFirebaseへの接続、またはテストを保障するモックシステムです
+        function setupMockSynchronizer() {
+            // ホストとゲストの盤面を交互に疑似同調させる開発用トグルです
+            setInterval(() => {
+                if (gameMode === "online" && isRoomConnected) {
+                    // 同期通信をローカルストレージなどで擬似再現します
+                    const data = localStorage.getItem(`room_${currentRoomId}`);
+                    if (data) {
+                        const parsed = JSON.parse(data);
+                        
+                        // ターン情報の同期
+                        if (parsed.activeTurnPlayer && parsed.activeTurnPlayer !== activeTurnPlayer) {
+                            setState(() => {
+                                activeTurnPlayer = parsed.activeTurnPlayer;
+                            });
+                        }
+
+                        const opponentKey = myRole === "host" ? "guest" : "host";
+                        if (parsed[opponentKey]) {
+                            const oppData = parsed[opponentKey];
+                            
+                            opponentHandCount = oppData.handCount;
+                            opponentDeckCount = oppData.deckCount;
+                            opponentSideCount = oppData.sideCount;
+                            opponentTrashCount = oppData.trashCount;
+
+                            opponentBattleField = oppData.battleField;
+                            opponentBench1 = oppData.bench1;
+                            opponentBench2 = oppData.bench2;
+                            opponentBench3 = oppData.bench3;
+                            opponentBench4 = oppData.bench4;
+                            opponentBench5 = oppData.bench5;
+                            opponentStadium = oppData.stadium;
+
+                            renderOpponentField();
+                        }
+                    }
+                }
+            }, 800);
+        }
+
+        function createRoom() {
+            const roomId = Math.floor(100000 + Math.random() * 900000).toString();
+            currentRoomId = roomId;
+            myRole = "host";
+            activeTurnPlayer = "host";
+            isRoomConnected = true;
+
+            document.getElementById('currentRoomText').textContent = `部屋コード: ${roomId} (ホスト)`;
+            document.getElementById('currentRoomText').classList.remove('hidden');
+            document.getElementById('roleToggle').classList.remove('hidden');
+            document.getElementById('opponentField').classList.remove('hidden');
+
+            const status = document.getElementById('connectionStatus');
+            status.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span> オンライン接続中 (Host)`;
+
+            // 初期ステートの保存
+            pushMyStateToFirestore();
+            updateTurnHeader();
+            showToast(`対戦部屋「${roomId}」を作成しました。友達に共有してください！`);
+        }
+
+        function joinRoom() {
+            const idInput = document.getElementById('roomIdInput').value.trim();
+            if (!idInput) {
+                showToast("部屋コードを入力してください", true);
+                return;
+            }
+            currentRoomId = idInput;
+            myRole = "guest";
+            isRoomConnected = true;
+
+            document.getElementById('currentRoomText').textContent = `部屋コード: ${idInput} (ゲスト)`;
+            document.getElementById('currentRoomText').classList.remove('hidden');
+            document.getElementById('roleToggle').classList.remove('hidden');
+            document.getElementById('opponentField').classList.remove('hidden');
+
+            const status = document.getElementById('connectionStatus');
+            status.innerHTML = `<span class="w-2.5 h-2.5 rounded-full bg-green-500 inline-block"></span> オンライン接続中 (Guest)`;
+
+            pushMyStateToFirestore();
+            updateTurnHeader();
+            showToast(`部屋「${idInput}」にゲストとして参加しました！`);
+        }
+
+        // 開発検証用: ホストとゲストの視点を1ブラウザ内で切り替えてデバッグ
+        function setTestRole(isHost) {
+            myRole = isHost ? "host" : "guest";
+            const hostBtn = document.getElementById('roleHostBtn');
+            const guestBtn = document.getElementById('roleGuestBtn');
+
+            if (isHost) {
+                hostBtn.className = "bg-amber-500 text-slate-950 px-2 py-0.5 rounded text-[10px] font-bold";
+                guestBtn.className = "text-slate-400 px-2 py-0.5 rounded text-[10px]";
+            } else {
+                hostBtn.className = "text-slate-400 px-2 py-0.5 rounded text-[10px]";
+                guestBtn.className = "bg-amber-500 text-slate-950 px-2 py-0.5 rounded text-[10px] font-bold";
+            }
+            showToast(`デバッグロールを「${myRole}」に変更しました。`);
+            updateTurnHeader();
+        }
+
+        // Firestoreの代わりにローカルストレージを用いてリアルタイム疑似同期を実現
+        function pushMyStateToFirestore(revealedCardName = null) {
+            if (!isRoomConnected || !currentRoomId) return;
+
+            const myKey = myRole;
+            const myData = {
+                uid: myKey,
+                handCount: hand.length,
+                deckCount: deck.length,
+                sideCount: side.length,
+                trashCount: trash.length,
+                battleField: battleField,
+                bench1: bench1,
+                bench2: bench2,
+                bench3: bench3,
+                bench4: bench4,
+                bench5: bench5,
+                stadium: stadium
+            };
+
+            // 古いデータをマージ
+            let currentRoomData = JSON.parse(localStorage.getItem(`room_${currentRoomId}`)) || {};
+            currentRoomData[myKey] = myData;
+            currentRoomData.activeTurnPlayer = activeTurnPlayer;
+
+            if (revealedCardName) {
+                currentRoomData[`${myKey}_revealed_card`] = revealedCardName;
+            }
+
+            localStorage.setItem(`room_${currentRoomId}`, JSON.stringify(currentRoomData));
+        }
+
+        // 相手の盤面のHTMLレンダリング
+        function renderOpponentField() {
+            document.getElementById('oppHandVal').textContent = opponentHandCount;
+            document.getElementById('oppDeckVal').textContent = opponentDeckCount;
+            document.getElementById('oppSideVal').textContent = opponentSideCount;
+            document.getElementById('oppTrashVal').textContent = opponentTrashCount;
+
+            renderOpponentZone('opp-battle', opponentBattleField);
+            renderOpponentZone('opp-stadium', opponentStadium);
+            renderOpponentZone('opp-bench1', opponentBench1);
+            renderOpponentZone('opp-bench2', opponentBench2);
+            renderOpponentZone('opp-bench3', opponentBench3);
+            renderOpponentZone('opp-bench4', opponentBench4);
+            renderOpponentZone('opp-bench5', opponentBench5);
+        }
+
+        function renderOpponentZone(id, cards) {
+            const container = document.getElementById(id);
+            if (!container) return;
+
+            if (!cards || cards.length === 0) {
+                container.innerHTML = `<span class="text-[10px] text-slate-600 flex m-auto">空</span>`;
+                return;
+            }
+
+            container.innerHTML = '';
+            
+            // 相手のカード表示（ドラッグ不可）
+            cards.forEach(c => {
+                const img = document.createElement('img');
+                img.src = c.isHidden ? 'https://www.pokemon-card.com/assets/images/noimage/poke_ura.jpg' : c.imageUrl;
+                img.className = "w-12 h-16 rounded object-cover inline-block m-0.5 shadow border border-slate-800";
+                img.title = c.name;
+                container.appendChild(img);
+            });
+        }
+
+        // ターンの表示変更
+        function updateTurnHeader() {
+            const banner = document.getElementById('turnBanner');
+            if (gameMode === "solo") {
+                updateLockStatus();
+                return;
+            }
+
+            const isMyTurnNow = _isMyTurn();
+            if (isMyTurnNow) {
+                banner.className = "bg-blue-600 text-white text-center py-2 text-xs font-bold flex items-center justify-center gap-2 shadow-inner";
+                banner.innerHTML = `<i class="fa-solid fa-play-circle"></i><span>★ あなたのターンです！カード操作が可能です。</span> <button onclick="_endMyTurn()" class="ml-4 bg-amber-500 hover:bg-amber-400 text-slate-950 text-[10px] px-3 py-1 rounded font-black">番を終了する</button>`;
+            } else {
+                banner.className = "bg-slate-800 text-slate-400 text-center py-2 text-xs font-bold flex items-center justify-center gap-2 shadow-inner";
+                banner.innerHTML = `<i class="fa-solid fa-pause-circle"></i><span>⏳ 相手のターン（待機中...）操作はロックされています。</span>`;
+            }
+        }
+
+        // 状態変更のセッター関数
+        function setState(callback) {
+            callback();
+            renderAllZones();
+            updateTurnHeader();
+        }
+
+        // === トースト通知ヘルパー ===
+        function showToast(msg, isError = false) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `px-4 py-3 rounded-lg text-xs font-bold shadow-2xl border flex items-center gap-2 transition duration-300 transform translate-y-2 opacity-0 ${isError ? 'bg-red-950/90 border-red-800 text-red-200' : 'bg-slate-900/95 border-slate-800 text-white'}`;
+            
+            toast.innerHTML = `
+                <i class="${isError ? 'fa-solid fa-circle-exclamation text-red-500' : 'fa-solid fa-circle-info text-blue-400'}"></i>
+                <span>${msg}</span>
+            `;
+            
+            container.appendChild(toast);
+            
+            // アニメーション表示
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+
+            // 3秒後に消去
+            setTimeout(() => {
+                toast.classList.add('translate-y-2', 'opacity-0');
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
